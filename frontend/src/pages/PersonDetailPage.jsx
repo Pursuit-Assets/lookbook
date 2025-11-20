@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, memo } from 'react';
+import { useState, useEffect, useLayoutEffect, useMemo, useCallback, memo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { profilesAPI, projectsAPI, getImageUrl } from '../utils/api';
 import analytics from '../utils/analytics';
@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { Linkedin, Globe, Camera, Code, Rocket, Zap, Lightbulb, Target, Square, Grid3x3, List, ChevronLeft, ChevronRight, Menu, X } from 'lucide-react';
+import { Linkedin, Globe, Camera, Code, Rocket, Zap, Lightbulb, Target, Square, Grid3x3, List, ChevronLeft, ChevronRight, Menu, X, Frown } from 'lucide-react';
 
 // Custom hook for debounced value
 const useDebounce = (value, delay) => {
@@ -127,11 +127,10 @@ const ProfileCard = ({ prof, onClick }) => {
   return (
     <div 
       ref={setCardRef}
-      className={`rounded-xl person-card-wrapper ${isFeatured ? 'featured' : ''}`}
+      className={`rounded-xl person-card-wrapper ${isFeatured ? 'featured' : ''} person-card-cursor`}
       style={{
         transformStyle: 'preserve-3d',
-        WebkitTransformStyle: 'preserve-3d',
-        cursor: 'pointer'
+        WebkitTransformStyle: 'preserve-3d'
       }}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
@@ -140,7 +139,7 @@ const ProfileCard = ({ prof, onClick }) => {
         className="rounded-xl border-0 shadow-md hover:shadow-2xl transition-all duration-300 overflow-hidden relative person-card"
         style={{
           backgroundColor: 'white', 
-          height: '380px',
+          aspectRatio: '3/4',
           borderRadius: '0.75rem'
         }}
         onClick={onClick}
@@ -186,7 +185,7 @@ const ProfileCard = ({ prof, onClick }) => {
       <CardContent className="relative z-10 p-6 h-full flex flex-col justify-between">
         {/* Top Section - Name and Title Only */}
         <div>
-          <h3 className="font-bold text-white uppercase mb-2" style={{fontFamily: "'Galano Grotesque', sans-serif", fontSize: '1.5rem'}}>{prof.name}</h3>
+          <h3 className="font-bold text-white uppercase mb-2 leading-none" style={{fontFamily: "'Galano Grotesque', sans-serif", fontSize: '1.5rem'}}>{prof.name}</h3>
           {prof.title && (
             <p className="text-white mb-2" style={{fontSize: '14px', fontWeight: '500', textShadow: '0 1px 2px rgba(0,0,0,0.5)'}}>{prof.title}</p>
           )}
@@ -226,13 +225,6 @@ const ProfileCard = ({ prof, onClick }) => {
                   {industry}
                 </span>
               ))}
-            </div>
-            
-            {/* Arrow Button */}
-            <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center">
-              <svg className="w-4 h-4 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" />
-              </svg>
             </div>
           </div>
         </div>
@@ -311,18 +303,17 @@ const ProjectCard = ({ proj, onClick }) => {
   return (
     <div 
       ref={setCardRef}
-      className={`rounded-xl project-card-wrapper ${isFeatured ? 'featured' : ''}`}
+      className={`rounded-xl project-card-wrapper ${isFeatured ? 'featured' : ''} project-card-cursor`}
       style={{
         transformStyle: 'preserve-3d',
-        WebkitTransformStyle: 'preserve-3d',
-        cursor: 'pointer'
+        WebkitTransformStyle: 'preserve-3d'
       }}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
     >
       <Card 
         className="rounded-xl border-0 shadow-md hover:shadow-2xl transition-all duration-300 overflow-hidden relative project-card"
-        style={{backgroundColor: 'white', height: '380px'}}
+        style={{backgroundColor: 'white', aspectRatio: '3/4'}}
         onClick={onClick}
       >
         {/* Background Image or Color */}
@@ -419,7 +410,7 @@ const ProjectCard = ({ proj, onClick }) => {
           
           {/* Top Section - Title and Description */}
           <div>
-            <h3 className="font-bold text-white uppercase mb-3 leading-tight" style={{fontFamily: "'Galano Grotesque', sans-serif", fontSize: '1.5rem'}}>{proj.title}</h3>
+            <h3 className="font-bold text-white uppercase mb-3 leading-none" style={{fontFamily: "'Galano Grotesque', sans-serif", fontSize: '1.5rem'}}>{proj.title}</h3>
             {proj.short_description && (
               <p className="text-white leading-snug mb-2" style={{fontSize: '14px', textShadow: '0 1px 2px rgba(0,0,0,0.5)'}}>{proj.short_description}</p>
             )}
@@ -481,7 +472,7 @@ const ProjectCard = ({ proj, onClick }) => {
               </div>
             </div>
             
-            {/* Category Badge and Arrow */}
+            {/* Category Badge */}
             <div className="flex items-center justify-between">
               <div className="flex flex-wrap gap-1">
               {proj.sectors && proj.sectors.length > 0 ? (
@@ -498,13 +489,6 @@ const ProjectCard = ({ proj, onClick }) => {
                   ))
                 ) : null}
                 </div>
-              
-              {/* Arrow Button */}
-              <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center">
-                <svg className="w-4 h-4 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" />
-                </svg>
-              </div>
             </div>
           </div>
         </CardContent>
@@ -645,10 +629,82 @@ function PersonDetailPage() {
     return true;
   }), [allProjects, debouncedProjectSearch, projectFilters.skills, projectFilters.sectors]);
 
+  // Filter person's projects based on project filters (for detail view)
+  const filteredPersonProjects = useMemo(() => {
+    if (!person?.projects) {
+      console.log('No person.projects found');
+      return [];
+    }
+    
+    // Handle case where projects might be null or not an array
+    const projectsArray = Array.isArray(person.projects) ? person.projects : [];
+    console.log('Person projects:', projectsArray.length, 'projects found');
+    console.log('Sample project:', projectsArray[0]);
+    
+    // If no filters are applied, return all projects
+    const hasSearch = debouncedProjectSearch && debouncedProjectSearch.trim().length > 0;
+    const hasSkillsFilter = projectFilters.skills.length > 0;
+    const hasSectorsFilter = projectFilters.sectors.length > 0;
+    
+    if (!hasSearch && !hasSkillsFilter && !hasSectorsFilter) {
+      console.log('No filters applied, returning all projects');
+      return projectsArray;
+    }
+    
+    const filtered = projectsArray.filter(project => {
+      // Search filter (using debounced value)
+      if (hasSearch) {
+        const searchLower = debouncedProjectSearch.toLowerCase();
+        const matchesTitle = project.title?.toLowerCase().includes(searchLower);
+        const matchesSummary = project.summary?.toLowerCase().includes(searchLower);
+        const matchesDescription = project.short_description?.toLowerCase().includes(searchLower);
+        const matchesSkills = Array.isArray(project.skills) && project.skills.some(skill => 
+          typeof skill === 'string' && skill.toLowerCase().includes(searchLower)
+        );
+        if (!matchesTitle && !matchesSummary && !matchesDescription && !matchesSkills) {
+          return false;
+        }
+      }
+      
+      // Skills filter
+      if (hasSkillsFilter) {
+        if (!Array.isArray(project.skills) || project.skills.length === 0) {
+          return false;
+        }
+        const hasSkill = projectFilters.skills.some(filterSkill => 
+          project.skills.includes(filterSkill)
+        );
+        if (!hasSkill) return false;
+      }
+      
+      // Sectors filter
+      if (hasSectorsFilter) {
+        if (!Array.isArray(project.sectors) || project.sectors.length === 0) {
+          return false;
+        }
+        const hasSector = projectFilters.sectors.some(filterSector => 
+          project.sectors.includes(filterSector)
+        );
+        if (!hasSector) return false;
+      }
+      
+      return true;
+    });
+    
+    console.log('Filtered person projects:', filtered.length, 'out of', projectsArray.length, 'projects');
+    console.log('Project filters:', { search: debouncedProjectSearch, skills: projectFilters.skills, sectors: projectFilters.sectors });
+    return filtered;
+  }, [person?.projects, debouncedProjectSearch, projectFilters.skills, projectFilters.sectors]);
+
   // Reset to first page when filters or search changes
   useEffect(() => {
     setGridPage(0);
   }, [peopleFilters.skills, peopleFilters.industries, peopleFilters.openToWork, projectFilters.skills, projectFilters.sectors, debouncedPeopleSearch, debouncedProjectSearch]);
+
+  // Reset carousel index when filtered person projects change
+  useEffect(() => {
+    setProjectCarouselIndex(0);
+  }, [filteredPersonProjects.length, debouncedProjectSearch, projectFilters.skills, projectFilters.sectors]);
 
   // Fetch data based on current view
   useEffect(() => {
@@ -696,8 +752,8 @@ function PersonDetailPage() {
             console.error('Error fetching projects:', err);
           }
         }
-      } else {
-        // Detail or list view: fetch all data for navigation
+      } else if (layoutView === 'list') {
+        // List view: fetch filtered data
         if (viewMode === 'people') {
           try {
             const response = await profilesAPI.getAll({
@@ -735,6 +791,8 @@ function PersonDetailPage() {
           }
         }
       }
+      // Detail view: Don't fetch filtered data - keep full unfiltered list for navigation
+      // The detail view fetch happens in the slug-based useEffect which always fetches full list
     };
     
     fetchData();
@@ -779,9 +837,11 @@ function PersonDetailPage() {
       const fetchPersonAndList = async () => {
         try {
           // Fetch both in parallel
+          // In detail view, ALWAYS fetch full unfiltered list for navigation
+          // This ensures we have the complete list regardless of previous filters
           const [personData, allData] = await Promise.all([
             profilesAPI.getBySlug(slug),
-            allProfiles.length > 0 ? Promise.resolve({ success: true, data: allProfiles }) : profilesAPI.getAll({ limit: 100 })
+            profilesAPI.getAll({ limit: 100 }) // Always fetch full unfiltered list
           ]);
           
           if (personData.success) {
@@ -795,15 +855,16 @@ function PersonDetailPage() {
               personData.data.skills || []
             );
             
-            // Update allProfiles if we just fetched them
-            if (allData.success && allProfiles.length === 0) {
+            // Always update allProfiles with full unfiltered list for navigation
+            if (allData.success) {
               setAllProfiles(allData.data);
+              setTotalProfiles(allData.data.length);
             }
             
-            // Find current index
+            // Find current index in the full list
             const profiles = allData.success ? allData.data : allProfiles;
             const index = profiles.findIndex(p => p.slug === slug);
-            setCurrentIndex(index);
+            setCurrentIndex(index >= 0 ? index : -1);
             setError(null);
           } else {
             setError('Person not found');
@@ -820,9 +881,11 @@ function PersonDetailPage() {
       const fetchProjectAndList = async () => {
         try {
           // Fetch both in parallel
+          // In detail view, ALWAYS fetch full unfiltered list for navigation
+          // This ensures we have the complete list regardless of previous filters
           const [projectData, allData] = await Promise.all([
             projectsAPI.getBySlug(slug),
-            allProjects.length > 0 ? Promise.resolve({ success: true, data: allProjects }) : projectsAPI.getAll({ limit: 30 })
+            projectsAPI.getAll({ limit: 100 }) // Always fetch full unfiltered list
           ]);
           
           if (projectData.success) {
@@ -837,15 +900,16 @@ function PersonDetailPage() {
               projectData.data.sectors || []
             );
             
-            // Update allProjects if we just fetched them
-            if (allData.success && allProjects.length === 0) {
+            // Always update allProjects with full unfiltered list for navigation
+            if (allData.success) {
               setAllProjects(allData.data);
+              setTotalProjects(allData.data.length);
             }
             
-            // Find current index
+            // Find current index in the full list
             const projects = allData.success ? allData.data : allProjects;
             const index = projects.findIndex(p => p.slug === slug);
-            setCurrentIndex(index);
+            setCurrentIndex(index >= 0 ? index : -1);
             setError(null);
           } else {
             setError('Project not found');
@@ -864,15 +928,64 @@ function PersonDetailPage() {
   }, [slug, viewMode]);
 
   // Update currentIndex when allProfiles or allProjects array loads
+  // Only update if we're in detail view and the current item is found in the list
+  // This prevents navigation issues when filters are applied
   useEffect(() => {
-    if (viewMode === 'people' && person && allProfiles.length > 0) {
-      const index = allProfiles.findIndex(p => p.slug === person.slug);
-      setCurrentIndex(index);
-    } else if (viewMode === 'projects' && project && allProjects.length > 0) {
-      const index = allProjects.findIndex(p => p.slug === project.slug);
-      setCurrentIndex(index);
+    if (layoutView === 'detail' && slug) {
+      if (viewMode === 'people' && person && allProfiles.length > 0) {
+        const index = allProfiles.findIndex(p => p.slug === person.slug);
+        // Only update if found (index >= 0), otherwise keep current index
+        // This prevents switching to a different person when filters exclude the current one
+        if (index >= 0) {
+          setCurrentIndex(index);
+        }
+      } else if (viewMode === 'projects' && project && allProjects.length > 0) {
+        const index = allProjects.findIndex(p => p.slug === project.slug);
+        if (index >= 0) {
+          setCurrentIndex(index);
+        }
+      }
     }
-  }, [allProfiles, allProjects, person, project, viewMode]);
+  }, [allProfiles, allProjects, person, project, viewMode, layoutView, slug]);
+
+  // Hide scrollbar on body/html only when in 4x2 grid view (4 columns, exactly 8 items)
+  useLayoutEffect(() => {
+    const updateScrollbar = () => {
+      // Check if we're in grid view, 4-column layout (2xl breakpoint), and have exactly 8 items
+      const is4ColumnView = window.innerWidth >= 1536; // 2xl breakpoint
+      const itemCount = viewMode === 'people' ? allProfiles.length : allProjects.length;
+      const isPerfect4x2 = layoutView === 'grid' && is4ColumnView && itemCount === 8;
+      
+      // Apply synchronously before browser paints to prevent flash
+      if (isPerfect4x2) {
+        document.body.classList.add('grid-view-page');
+        document.documentElement.classList.add('grid-view-page');
+        // Also set inline style immediately to prevent flash
+        document.body.style.overflowY = 'hidden';
+        document.documentElement.style.overflowY = 'hidden';
+      } else {
+        document.body.classList.remove('grid-view-page');
+        document.documentElement.classList.remove('grid-view-page');
+        document.body.style.overflowY = '';
+        document.documentElement.style.overflowY = '';
+      }
+    };
+    
+    // Update immediately
+    updateScrollbar();
+    
+    // Also listen for window resize to update when switching between column layouts
+    window.addEventListener('resize', updateScrollbar);
+    
+    // Cleanup on unmount
+    return () => {
+      window.removeEventListener('resize', updateScrollbar);
+      document.body.classList.remove('grid-view-page');
+      document.documentElement.classList.remove('grid-view-page');
+      document.body.style.overflowY = '';
+      document.documentElement.style.overflowY = '';
+    };
+  }, [layoutView, viewMode, allProfiles.length, allProjects.length]);
 
   // Prefetch adjacent items for instant navigation
   useEffect(() => {
@@ -1000,60 +1113,33 @@ function PersonDetailPage() {
   const currentLength = viewMode === 'people' ? allProfiles.length : allProjects.length;
   const canGoNext = currentIndex >= 0 && currentIndex < currentLength - 1;
 
-  if (loading) return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
+  if (loading) return <div className="flex items-center justify-center min-h-screen" style={{backgroundColor: '#e3e3e3'}}>Loading...</div>;
   // Only show error if we're done loading and viewMode has been set
-  if (error && slug && !loading && viewMode) return <div className="flex items-center justify-center min-h-screen text-red-500">{error}</div>;
-  if (!person && !project && slug && layoutView === 'detail') return <div className="flex items-center justify-center min-h-screen">Not found</div>;
+  if (error && slug && !loading && viewMode) return <div className="flex items-center justify-center min-h-screen text-red-500" style={{backgroundColor: '#e3e3e3'}}>{error}</div>;
+  if (!person && !project && slug && layoutView === 'detail') return <div className="flex items-center justify-center min-h-screen" style={{backgroundColor: '#e3e3e3'}}>Not found</div>;
 
   const initials = person?.name?.split(' ').map(n => n.charAt(0)).join('') || project?.title?.charAt(0) || '?';
 
   return (
-    <div className="flex min-h-screen" style={{backgroundColor: '#e3e3e3'}}>
+    <div className={`flex ${layoutView === 'grid' ? 'grid-view-page' : ''}`} style={{backgroundColor: '#e3e3e3', width: '100%', maxWidth: '100vw', overflowX: 'hidden', minHeight: '100vh'}}>
       {/* Logo - Top Left - Fixed */}
-      <div className="fixed left-2 md:left-4 top-2 md:top-4 z-50">
+      <div className="fixed left-2 lg:left-5 top-2 lg:top-4 z-50">
         <a href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity cursor-pointer">
           <img 
             src="/pursuit-wordmark.png" 
             alt="Pursuit" 
-            className="h-6 md:h-8"
+            className="h-8"
           />
-          <span className="text-sm md:text-base hidden sm:inline">Lookbook</span>
+          <span className="text-sm lg:text-base hidden lg:inline">Lookbook</span>
         </a>
       </div>
 
-      {/* Mobile Menu Button - Top Right - Fixed */}
-      <button
-        onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-        className="sm:hidden fixed right-2 top-2 z-50 bg-white rounded-lg p-2 shadow-md border border-gray-200"
-        aria-label="Toggle menu"
-      >
-        {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-      </button>
-
-      {/* Search Bar and View Icons - Scrolls with content */}
-      <div className="absolute top-2 md:top-4 z-40 left-2 right-14 sm:right-2 sm:left-[280px] lg:left-[272px] md:right-4">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row justify-between items-start sm:items-end gap-2 sm:gap-3">
-          {/* Page indicator */}
-          {layoutView === 'grid' && (
-            <div className="text-sm md:text-base font-semibold text-gray-700 hidden sm:block">
-              Page {gridPage + 1} of {Math.ceil((viewMode === 'people' ? totalProfiles : totalProjects) / 8)}
-            </div>
-          )}
-          {layoutView === 'detail' && currentLength > 0 && currentIndex >= 0 && (
-            <div className="text-sm md:text-base font-semibold text-gray-700 hidden sm:block">
-              {currentIndex + 1} of {currentLength}
-            </div>
-          )}
-          {layoutView === 'list' && (
-            <div className="text-sm md:text-base font-semibold text-gray-700 hidden sm:block">
-              {viewMode === 'people' ? filteredProfiles.length : filteredProjects.length} {viewMode === 'people' ? 'People' : 'Projects'}
-            </div>
-          )}
-          
-          <div className="flex items-center gap-2 sm:gap-3 ml-auto w-full sm:w-auto justify-end">
-          {layoutView === 'grid' && (
-          <Input
-              placeholder={viewMode === 'people' ? 'Search People' : 'Search Projects'}
+      {/* Mobile: Fixed Top Right - Search, View Toggles, and Hamburger in one unit */}
+      <div className="lg:hidden fixed top-2 right-2 z-50 flex items-center gap-2">
+        {layoutView === 'grid' && (
+          <div className="relative">
+            <Input
+              placeholder="Search"
               value={viewMode === 'people' ? peopleFilters.search : projectFilters.search}
               onChange={(e) => {
                 if (viewMode === 'people') {
@@ -1062,52 +1148,275 @@ function PersonDetailPage() {
                   setProjectFilters({ ...projectFilters, search: e.target.value });
                 }
               }}
-            className="w-32 sm:w-48 md:w-64 bg-white text-sm"
-          />
-          )}
-          {/* View Toggle Icons */}
-          <div className="flex items-center gap-1 bg-white rounded-md border p-1">
-            <button 
-              className="p-1.5 md:p-2 rounded hover:bg-gray-100"
-              style={{backgroundColor: layoutView === 'grid' ? '#4242ea' : 'transparent', color: layoutView === 'grid' ? 'white' : 'black'}}
-              onClick={() => {
-                setLayoutView('grid');
-                // Navigate to base route when switching to grid view
-                if (viewMode === 'people') {
-                  navigate('/people');
-                } else {
-                  navigate('/projects');
-                }
-              }}
-            >
-              <Grid3x3 className="w-3 h-3 md:w-4 md:h-4" />
-            </button>
-            <button 
-              className="p-1.5 md:p-2 rounded" 
-              style={{backgroundColor: layoutView === 'detail' ? '#4242ea' : 'transparent', color: layoutView === 'detail' ? 'white' : 'black'}}
-              onClick={() => {
-                // When switching to detail view, navigate to first item if no slug
-                if (!slug) {
-                  if (viewMode === 'people' && filteredProfiles.length > 0) {
-                    navigate(`/people/${filteredProfiles[0].slug}`);
-                  } else if (viewMode === 'projects' && filteredProjects.length > 0) {
-                    navigate(`/projects/${filteredProjects[0].slug}`);
+              className="search-input w-32 h-10 bg-white pr-14"
+            />
+            {(viewMode === 'people' ? peopleFilters.search : projectFilters.search) && (
+              <button
+                onClick={() => {
+                  if (viewMode === 'people') {
+                    setPeopleFilters({ ...peopleFilters, search: '' });
+                  } else {
+                    setProjectFilters({ ...projectFilters, search: '' });
                   }
-                } else {
-                  setLayoutView('detail');
-                }
-              }}
-            >
-              <Square className="w-3 h-3 md:w-4 md:h-4" />
-            </button>
-            <button 
-              className="hidden md:inline-flex p-1.5 md:p-2 rounded hover:bg-gray-100"
-              style={{backgroundColor: layoutView === 'list' ? '#4242ea' : 'transparent', color: layoutView === 'list' ? 'white' : 'black'}}
-              onClick={() => setLayoutView('list')}
-            >
-              <List className="w-4 h-4" />
-            </button>
+                }}
+                className="absolute right-[10px] top-1/2 -translate-y-1/2 w-4 h-4 lg:w-5 lg:h-5 rounded-full border-[1.5px] border-white flex items-center justify-center search-clear-button transition-all"
+                aria-label="Clear search"
+              >
+                <X className="w-3 h-3 lg:w-4 lg:h-4 text-white search-clear-icon" strokeWidth={2} />
+              </button>
+            )}
           </div>
+        )}
+        {/* View Toggle Icons */}
+        <div className="view-toggle-container flex items-center gap-1 bg-white rounded-md border h-10 relative" style={{padding: 0}}>
+          <div 
+            className="view-toggle-slider"
+            style={{
+              transform: layoutView === 'grid' ? 'translateX(0)' : 'translateX(calc(2.5rem + 4px))'
+            }}
+          />
+          <button 
+            className="rounded hover:bg-gray-100/50"
+            data-active={layoutView === 'grid'}
+            onClick={() => {
+              setLayoutView('grid');
+              if (viewMode === 'people') {
+                navigate('/people');
+              } else {
+                navigate('/projects');
+              }
+            }}
+          >
+            <Grid3x3 className="w-3 h-3" />
+          </button>
+          <button 
+            className="rounded hover:bg-gray-100/50" 
+            data-active={layoutView === 'detail'}
+            onClick={() => {
+              if (!slug) {
+                if (viewMode === 'people' && filteredProfiles.length > 0) {
+                  navigate(`/people/${filteredProfiles[0].slug}`);
+                } else if (viewMode === 'projects' && filteredProjects.length > 0) {
+                  navigate(`/projects/${filteredProjects[0].slug}`);
+                }
+              } else {
+                setLayoutView('detail');
+              }
+            }}
+          >
+            <Square className="w-3 h-3" />
+          </button>
+        </div>
+        {/* Hamburger Menu Button */}
+        <button
+          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          className="bg-white rounded-md border border-gray-200 h-10 w-10 flex items-center justify-center"
+          aria-label="Toggle menu"
+        >
+          {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+        </button>
+      </div>
+
+      {/* Desktop: Search Bar and View Icons - Scrolls with content */}
+      <div className="hidden lg:block absolute top-4 z-40 right-2 left-[268px]">
+        <div className="flex flex-row justify-between items-end gap-3" style={{marginLeft: 0, marginRight: 0, paddingLeft: '2rem', paddingRight: '1rem', width: '100%'}}>
+          {/* Left side: Pagination controls - aligned with cards */}
+          <div className="flex items-center gap-3" style={{marginLeft: 0, paddingLeft: 0}}>
+            {/* Page indicator with navigation - left-aligned */}
+            {layoutView === 'grid' && (
+              <>
+                {viewMode === 'projects' && Math.ceil(totalProjects / 8) > 1 && (
+                  <div className="flex items-center">
+                    <button
+                      onClick={() => setGridPage(Math.max(0, gridPage - 1))}
+                      disabled={gridPage === 0}
+                      className="page-nav-button page-nav-button-left h-[40px] w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center"
+                      style={{
+                        color: gridPage === 0 ? '#d1d5db' : '#4242ea',
+                        backgroundColor: '#ffffff',
+                        marginRight: '5px'
+                      }}
+                      aria-label="Previous page"
+                    >
+                      <ChevronLeft className="w-[30px] h-[30px]" strokeWidth={1.5} />
+                    </button>
+                    <div className="text-base text-gray-700 w-32 text-center bg-white rounded-md border-0 h-10 px-[15px] flex items-center justify-center">
+                      <span className="font-bold">P. {String(gridPage + 1).padStart(2, '0')}</span><span style={{marginLeft: 'calc(0.25em + 2px)', marginRight: '0.25em'}}>/</span>{String(Math.ceil(totalProjects / 8)).padStart(2, '0')}
+                    </div>
+                    <button
+                      onClick={() => setGridPage(Math.min(Math.ceil(totalProjects / 8) - 1, gridPage + 1))}
+                      disabled={gridPage >= Math.ceil(totalProjects / 8) - 1}
+                      className="page-nav-button h-[40px] w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center"
+                      style={{
+                        color: gridPage >= Math.ceil(totalProjects / 8) - 1 ? '#d1d5db' : '#4242ea',
+                        backgroundColor: '#ffffff',
+                        marginLeft: '5px'
+                      }}
+                      aria-label="Next page"
+                    >
+                      <ChevronRight className="w-[30px] h-[30px]" strokeWidth={1.5} />
+                    </button>
+                  </div>
+                )}
+                {viewMode === 'people' && Math.ceil(totalProfiles / 8) > 1 && (
+                  <div className="flex items-center">
+                    <button
+                      onClick={() => setGridPage(Math.max(0, gridPage - 1))}
+                      disabled={gridPage === 0}
+                      className="page-nav-button page-nav-button-left h-[40px] w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center"
+                      style={{
+                        color: gridPage === 0 ? '#d1d5db' : '#4242ea',
+                        backgroundColor: '#ffffff',
+                        marginRight: '5px'
+                      }}
+                      aria-label="Previous page"
+                    >
+                      <ChevronLeft className="w-[30px] h-[30px]" strokeWidth={1.5} />
+                    </button>
+                    <div className="text-base text-gray-700 w-28 text-center bg-white rounded-md border-0 h-10 px-[15px] flex items-center justify-center">
+                      <span className="font-bold">P. {String(gridPage + 1).padStart(2, '0')}</span><span style={{marginLeft: 'calc(0.25em + 2px)', marginRight: '0.25em'}}>/</span>{String(Math.ceil(totalProfiles / 8)).padStart(2, '0')}
+                    </div>
+                    <button
+                      onClick={() => setGridPage(Math.min(Math.ceil(totalProfiles / 8) - 1, gridPage + 1))}
+                      disabled={gridPage >= Math.ceil(totalProfiles / 8) - 1}
+                      className="page-nav-button h-[40px] w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center"
+                      style={{
+                        color: gridPage >= Math.ceil(totalProfiles / 8) - 1 ? '#d1d5db' : '#4242ea',
+                        backgroundColor: '#ffffff',
+                        marginLeft: '5px'
+                      }}
+                      aria-label="Next page"
+                    >
+                      <ChevronRight className="w-[30px] h-[30px]" strokeWidth={1.5} />
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+            {layoutView === 'list' && (
+              <div className="h-10 flex items-center text-base font-semibold text-gray-700">
+                {viewMode === 'people' ? filteredProfiles.length : filteredProjects.length} {viewMode === 'people' ? 'People' : 'Projects'}
+              </div>
+            )}
+            {layoutView === 'detail' && currentLength > 1 && (
+              <div className="flex items-center">
+                <button
+                  onClick={handlePrevious}
+                  disabled={!canGoPrevious}
+                  className="page-nav-button page-nav-button-left h-[40px] w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center"
+                  style={{
+                    color: !canGoPrevious ? '#d1d5db' : '#4242ea',
+                    backgroundColor: '#ffffff',
+                    marginRight: '5px'
+                  }}
+                  aria-label="Previous"
+                >
+                  <ChevronLeft className="w-[30px] h-[30px]" strokeWidth={1.5} />
+                </button>
+                <div className="text-base text-gray-700 w-28 text-center bg-white rounded-md border-0 h-10 px-[15px] flex items-center justify-center">
+                  <span className="font-bold">P. {String(currentIndex + 1).padStart(2, '0')}</span><span style={{marginLeft: 'calc(0.25em + 2px)', marginRight: '0.25em'}}>/</span>{String(currentLength).padStart(2, '0')}
+                </div>
+                <button
+                  onClick={handleNext}
+                  disabled={!canGoNext}
+                  className="page-nav-button h-[40px] w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center"
+                  style={{
+                    color: !canGoNext ? '#d1d5db' : '#4242ea',
+                    backgroundColor: '#ffffff',
+                    marginLeft: '5px'
+                  }}
+                  aria-label="Next"
+                >
+                  <ChevronRight className="w-[30px] h-[30px]" strokeWidth={1.5} />
+                </button>
+              </div>
+            )}
+          </div>
+          
+          {/* Right side: Search and View Icons */}
+          <div className="flex items-center gap-3 ml-auto justify-end">
+            {layoutView === 'grid' && (
+              <div className="relative">
+                <Input
+                  placeholder="Search"
+                  value={viewMode === 'people' ? peopleFilters.search : projectFilters.search}
+                  onChange={(e) => {
+                    if (viewMode === 'people') {
+                      setPeopleFilters({ ...peopleFilters, search: e.target.value });
+                    } else {
+                      setProjectFilters({ ...projectFilters, search: e.target.value });
+                    }
+                  }}
+                  className="search-input w-48 xl:w-64 h-10 bg-white pr-14"
+                />
+                {(viewMode === 'people' ? peopleFilters.search : projectFilters.search) && (
+                  <button
+                    onClick={() => {
+                      if (viewMode === 'people') {
+                        setPeopleFilters({ ...peopleFilters, search: '' });
+                      } else {
+                        setProjectFilters({ ...projectFilters, search: '' });
+                      }
+                    }}
+                    className="absolute right-[10px] top-1/2 -translate-y-1/2 w-4 h-4 lg:w-5 lg:h-5 rounded-full border-[1.5px] border-white flex items-center justify-center search-clear-button transition-all"
+                    aria-label="Clear search"
+                  >
+                    <X className="w-3 h-3 lg:w-4 lg:h-4 text-white search-clear-icon" strokeWidth={2} />
+                  </button>
+                )}
+              </div>
+            )}
+            {/* View Toggle Icons */}
+            <div className="view-toggle-container flex items-center gap-1 bg-white rounded-md border h-10 relative" style={{padding: 0}}>
+              <div 
+                className="view-toggle-slider"
+                style={{
+                  transform: layoutView === 'grid' 
+                    ? 'translateX(0)' 
+                    : layoutView === 'detail' 
+                    ? 'translateX(calc(2.5rem + 4px))' 
+                    : 'translateX(calc(5rem + 8px))'
+                }}
+              />
+              <button 
+                className="rounded hover:bg-gray-100/50"
+                data-active={layoutView === 'grid'}
+                onClick={() => {
+                  setLayoutView('grid');
+                  if (viewMode === 'people') {
+                    navigate('/people');
+                  } else {
+                    navigate('/projects');
+                  }
+                }}
+              >
+                <Grid3x3 className="w-4 h-4" />
+              </button>
+              <button 
+                className="rounded hover:bg-gray-100/50" 
+                data-active={layoutView === 'detail'}
+                onClick={() => {
+                  if (!slug) {
+                    if (viewMode === 'people' && filteredProfiles.length > 0) {
+                      navigate(`/people/${filteredProfiles[0].slug}`);
+                    } else if (viewMode === 'projects' && filteredProjects.length > 0) {
+                      navigate(`/projects/${filteredProjects[0].slug}`);
+                    }
+                  } else {
+                    setLayoutView('detail');
+                  }
+                }}
+              >
+                <Square className="w-4 h-4" />
+              </button>
+              <button 
+                className="rounded hover:bg-gray-100/50"
+                data-active={layoutView === 'list'}
+                onClick={() => setLayoutView('list')}
+              >
+                <List className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1115,20 +1424,20 @@ function PersonDetailPage() {
       {/* Mobile Sidebar Overlay */}
       {mobileMenuOpen && (
         <div 
-          className="sm:hidden fixed inset-0 bg-black/50 z-40"
+          className="lg:hidden fixed inset-0 bg-black/50 z-40"
           onClick={() => setMobileMenuOpen(false)}
         />
       )}
 
       {/* Left Sidebar - Floating - Slides in on mobile, always visible on desktop */}
-      <div className={`fixed left-0 sm:left-4 top-0 sm:top-20 z-50 transition-transform duration-300 ${
-        mobileMenuOpen ? 'translate-x-0' : '-translate-x-full sm:translate-x-0'
-      } sm:block`}>
-        <aside style={{backgroundColor: '#e3e3e3'}} className="w-72 sm:w-60 h-screen sm:h-auto sm:rounded-xl overflow-y-auto border-r-2 sm:border-2 border-white sm:max-h-[calc(100vh-10rem)] pt-14 sm:pt-0 pb-20 sm:pb-0">
+      <div className={`fixed left-0 lg:left-5 top-0 lg:top-20 z-50 transition-transform duration-300 ${
+mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+      } lg:block`}>
+        <aside style={{backgroundColor: '#e3e3e3'}} className="w-72 lg:w-60 h-screen lg:h-auto lg:rounded-xl overflow-y-auto border-r-2 lg:border-2 border-white lg:max-h-[calc(100vh-10rem)] pt-14 lg:pt-4 pb-20 lg:pb-0">
           <div className="flex flex-col h-full">
 
           {/* Filter Content */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 pt-0">
               {/* Tabs */}
               <div className="flex gap-1 border-b">
                 <button
@@ -1356,105 +1665,84 @@ function PersonDetailPage() {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 mt-16 sm:mt-20 mx-2 sm:ml-[260px] lg:ml-[260px] sm:mr-8 lg:mr-16">
-        <div className="max-w-7xl mx-auto relative">
+      <div className="flex-1 mt-16 lg:mt-20 mx-2 lg:ml-[260px] lg:mr-2" style={{width: '100%', maxWidth: '100%', overflowX: 'hidden'}}>
+        <div className="relative pt-0 pb-4" style={{marginLeft: 0, marginRight: 0, paddingLeft: '2rem', paddingRight: '1rem', width: '100%', maxWidth: '100%', overflowX: 'hidden'}}>
           
           {/* Grid View */}
           {layoutView === 'grid' && viewMode === 'projects' && (
             <>
-              {/* Grid Navigation Arrows - Hidden on mobile */}
-              <div className="hidden md:block sticky top-1/2 -translate-y-1/2 left-0 right-0 h-0 pointer-events-none z-50">
-                <button
-                  onClick={() => setGridPage(Math.max(0, gridPage - 1))}
-                  disabled={gridPage === 0}
-                  className="absolute flex flex-col items-center gap-3 transition-all disabled:opacity-30 disabled:cursor-not-allowed pointer-events-auto"
-                  style={{left: '-70px'}}
-                  aria-label="Previous page"
-                >
-                  <div className="rounded-full p-3 shadow-lg transition-all hover:scale-110 disabled:hover:scale-100" style={{backgroundColor: '#4242ea'}}>
-                    <ChevronLeft className="w-6 h-6 text-white" />
-                  </div>
-                  <span className="text-xs text-gray-500">Previous</span>
-                </button>
-
-                <button
-                  onClick={() => setGridPage(Math.min(Math.ceil(totalProjects / 8) - 1, gridPage + 1))}
-                  disabled={gridPage >= Math.ceil(totalProjects / 8) - 1}
-                  className="absolute flex flex-col items-center gap-3 transition-all disabled:opacity-30 disabled:cursor-not-allowed pointer-events-auto"
-                  style={{right: '-70px'}}
-                  aria-label="Next page"
-                >
-                  <div className="rounded-full p-3 shadow-lg transition-all hover:scale-110 disabled:hover:scale-100" style={{backgroundColor: '#4242ea'}}>
-                    <ChevronRight className="w-6 h-6 text-white" />
-                  </div>
-                  <span className="text-xs text-gray-500">Next</span>
-                </button>
-              </div>
-
-              <div 
-                key={`projects-grid-${gridPage}`}
-                className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 grid-rows-2 gap-6 md:mb-0 mb-20" 
-                style={{
-                animation: 'fadeIn 0.3s ease-in-out',
-                }}
-              >
-              <style>{`
-                @keyframes fadeIn {
-                  from {
-                    opacity: 0;
-                    transform: scale(0.95);
-                  }
-                  to {
-                    opacity: 1;
-                    transform: scale(1);
-                  }
-                }
-              `}</style>
-              {allProjects.map((proj, idx) => (
-                <MemoizedProjectCard 
-                  key={proj.slug}
-                  proj={proj}
-                  onClick={() => {
-                    setLayoutView('detail');
-                    navigate(`/projects/${proj.slug}`);
+              {filteredProjects.length === 0 ? (
+                <div className="flex flex-col items-center justify-center" style={{minHeight: 'calc(100vh - 12rem)', gap: '1rem'}}>
+                  <Frown className="text-[#4242ea] error-icon" style={{width: '3rem', height: '3rem'}} strokeWidth={1.5} stroke="#4242ea" />
+                  <p className="text-[#4242ea] uppercase" style={{fontFamily: "'Galano Grotesque', sans-serif", fontSize: '1.5rem', fontWeight: 400}}>
+                    Sorry! Can't find any projects
+                  </p>
+                  <button
+                    style={{marginTop: '1rem'}}
+                    onClick={() => {
+                      setProjectFilters({ search: '', skills: [], sectors: [] });
+                    }}
+                    className="page-nav-button h-10 px-6 rounded-full border-[1.5px] border-[#4242ea] bg-[#e3e3e3] text-[#4242ea] transition-all"
+                  >
+                    <span className="relative z-10">Clear Search</span>
+                  </button>
+                </div>
+              ) : (
+                <div 
+                  key={`projects-grid-${gridPage}`}
+                  className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-[18px] mb-0" 
+                  style={{
+                  animation: 'fadeIn 0.3s ease-in-out',
+                  gridAutoRows: 'auto',
+                  overflow: 'visible'
                   }}
-                />
-              ))}
-            </div>
+                >
+                  {filteredProjects.slice(gridPage * 8, (gridPage + 1) * 8).map((proj, idx) => (
+                    <MemoizedProjectCard 
+                      key={proj.slug}
+                      proj={proj}
+                      onClick={() => {
+                        setLayoutView('detail');
+                        navigate(`/projects/${proj.slug}`);
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
 
             {/* Mobile Navigation - Bottom Fixed for Projects Grid */}
             {Math.ceil(totalProjects / 8) > 1 && (
-            <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 px-4 py-3 flex items-center justify-between shadow-lg">
-              <button
-                onClick={() => setGridPage(Math.max(0, gridPage - 1))}
-                disabled={gridPage === 0}
-                className="flex items-center gap-3 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
-              >
-                <div 
-                  className="w-10 h-10 rounded-full flex items-center justify-center transition-all"
-                  style={{backgroundColor: gridPage > 0 ? '#4242ea' : '#e5e7eb'}}
-                >
-                  <ChevronLeft className="w-5 h-5" style={{color: gridPage > 0 ? 'white' : '#9ca3af'}} />
-                </div>
-                <span className="text-sm" style={{color: gridPage > 0 ? '#4242ea' : '#9ca3af'}}>Previous</span>
+            <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white z-50 px-4 py-3 flex items-center justify-center shadow-lg">
+                    <button
+                      onClick={() => setGridPage(Math.max(0, gridPage - 1))}
+                      disabled={gridPage === 0}
+                      className="page-nav-button page-nav-button-left h-[40px] w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center"
+                      style={{
+                        color: gridPage === 0 ? '#d1d5db' : '#4242ea',
+                        backgroundColor: '#ffffff',
+                        marginRight: '5px'
+                      }}
+                      aria-label="Previous page"
+                    >
+                      <ChevronLeft className="w-[30px] h-[30px]" strokeWidth={1.5} />
               </button>
               
-              <div className="text-sm font-semibold text-gray-700">
-                Page {gridPage + 1} of {Math.ceil(totalProjects / 8)}
+              <div className="text-base text-gray-700 w-28 text-center bg-white rounded-md border-0 h-10 px-[15px] flex items-center justify-center">
+                <span className="font-bold">P. {String(gridPage + 1).padStart(2, '0')}</span><span style={{marginLeft: 'calc(0.25em + 2px)', marginRight: '0.25em'}}>/</span>{String(Math.ceil(totalProjects / 8)).padStart(2, '0')}
               </div>
 
               <button
                 onClick={() => setGridPage(Math.min(Math.ceil(totalProjects / 8) - 1, gridPage + 1))}
                 disabled={gridPage >= Math.ceil(totalProjects / 8) - 1}
-                className="flex items-center gap-3 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                className="page-nav-button h-[40px] w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center"
+                style={{
+                  color: gridPage >= Math.ceil(totalProjects / 8) - 1 ? '#d1d5db' : '#4242ea',
+                  backgroundColor: '#ffffff',
+                  marginLeft: '5px'
+                }}
+                aria-label="Next page"
               >
-                <span className="text-sm" style={{color: gridPage < Math.ceil(totalProjects / 8) - 1 ? '#4242ea' : '#9ca3af'}}>Next</span>
-                <div 
-                  className="w-10 h-10 rounded-full flex items-center justify-center transition-all"
-                  style={{backgroundColor: gridPage < Math.ceil(totalProjects / 8) - 1 ? '#4242ea' : '#e5e7eb'}}
-                >
-                  <ChevronRight className="w-5 h-5" style={{color: gridPage < Math.ceil(totalProjects / 8) - 1 ? 'white' : '#9ca3af'}} />
-                </div>
+                <ChevronRight className="w-[30px] h-[30px]" strokeWidth={1.5} />
               </button>
             </div>
             )}
@@ -1464,99 +1752,78 @@ function PersonDetailPage() {
           {/* People Grid View */}
           {layoutView === 'grid' && viewMode === 'people' && (
             <>
-              {/* Grid Navigation Arrows - Hidden on mobile */}
-              <div className="hidden md:block sticky top-1/2 -translate-y-1/2 left-0 right-0 h-0 pointer-events-none z-50">
-                <button
-                  onClick={() => setGridPage(Math.max(0, gridPage - 1))}
-                  disabled={gridPage === 0}
-                  className="absolute flex flex-col items-center gap-3 transition-all disabled:opacity-30 disabled:cursor-not-allowed pointer-events-auto"
-                  style={{left: '-70px'}}
-                  aria-label="Previous page"
-                >
-                  <div className="rounded-full p-3 shadow-lg transition-all hover:scale-110 disabled:hover:scale-100" style={{backgroundColor: '#4242ea'}}>
-                    <ChevronLeft className="w-6 h-6 text-white" />
-                  </div>
-                  <span className="text-xs text-gray-500">Previous</span>
-                </button>
-
-                <button
-                  onClick={() => setGridPage(Math.min(Math.ceil(totalProfiles / 8) - 1, gridPage + 1))}
-                  disabled={gridPage >= Math.ceil(totalProfiles / 8) - 1}
-                  className="absolute flex flex-col items-center gap-3 transition-all disabled:opacity-30 disabled:cursor-not-allowed pointer-events-auto"
-                  style={{right: '-70px'}}
-                  aria-label="Next page"
-                >
-                  <div className="rounded-full p-3 shadow-lg transition-all hover:scale-110 disabled:hover:scale-100" style={{backgroundColor: '#4242ea'}}>
-                    <ChevronRight className="w-6 h-6 text-white" />
-                  </div>
-                  <span className="text-xs text-gray-500">Next</span>
-                </button>
-              </div>
-
-              <div 
-                key={`people-grid-${gridPage}`}
-                className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 grid-rows-2 gap-6 md:mb-0 mb-20" 
-                style={{
-                animation: 'fadeIn 0.3s ease-in-out',
-                }}
-              >
-              <style>{`
-                @keyframes fadeIn {
-                  from {
-                    opacity: 0;
-                    transform: scale(0.95);
-                  }
-                  to {
-                    opacity: 1;
-                    transform: scale(1);
-                  }
-                }
-              `}</style>
-              {allProfiles.map((prof, idx) => (
-                <MemoizedProfileCard 
-                  key={prof.slug}
-                  prof={prof}
-                  onClick={() => {
-                    setLayoutView('detail');
-                    navigate(`/people/${prof.slug}`);
+              {filteredProfiles.length === 0 ? (
+                <div className="flex flex-col items-center justify-center" style={{minHeight: 'calc(100vh - 12rem)', gap: '1rem'}}>
+                  <Frown className="text-[#4242ea] error-icon" style={{width: '3rem', height: '3rem'}} strokeWidth={1.5} stroke="#4242ea" />
+                  <p className="text-[#4242ea] uppercase" style={{fontFamily: "'Galano Grotesque', sans-serif", fontSize: '1.5rem', fontWeight: 400}}>
+                    Sorry! Can't find anyone
+                  </p>
+                  <button
+                    style={{marginTop: '1rem'}}
+                    onClick={() => {
+                      setPeopleFilters({ search: '', skills: [], industries: [], openToWork: false });
+                    }}
+                    className="page-nav-button h-10 px-6 rounded-full border-[1.5px] border-[#4242ea] bg-[#e3e3e3] text-[#4242ea] transition-all"
+                  >
+                    <span className="relative z-10">Clear Search</span>
+                  </button>
+                </div>
+              ) : (
+                <div 
+                  key={`people-grid-${gridPage}`}
+                  className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-[18px] mb-0" 
+                  style={{
+                  animation: 'fadeIn 0.3s ease-in-out',
+                  gridAutoRows: 'auto',
+                  overflow: 'visible'
                   }}
-                />
-              ))}
-            </div>
+                >
+                  {filteredProfiles.slice(gridPage * 8, (gridPage + 1) * 8).map((prof, idx) => (
+                    <MemoizedProfileCard 
+                      key={prof.slug}
+                      prof={prof}
+                      onClick={() => {
+                        setLayoutView('detail');
+                        navigate(`/people/${prof.slug}`);
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
 
             {/* Mobile Navigation - Bottom Fixed for People Grid */}
             {Math.ceil(totalProfiles / 8) > 1 && (
-            <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 px-4 py-3 flex items-center justify-between shadow-lg">
-              <button
-                onClick={() => setGridPage(Math.max(0, gridPage - 1))}
-                disabled={gridPage === 0}
-                className="flex items-center gap-3 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
-              >
-                <div 
-                  className="w-10 h-10 rounded-full flex items-center justify-center transition-all"
-                  style={{backgroundColor: gridPage > 0 ? '#4242ea' : '#e5e7eb'}}
-                >
-                  <ChevronLeft className="w-5 h-5" style={{color: gridPage > 0 ? 'white' : '#9ca3af'}} />
-                </div>
-                <span className="text-sm" style={{color: gridPage > 0 ? '#4242ea' : '#9ca3af'}}>Previous</span>
+            <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white z-50 px-4 py-3 flex items-center justify-center shadow-lg">
+                    <button
+                      onClick={() => setGridPage(Math.max(0, gridPage - 1))}
+                      disabled={gridPage === 0}
+                      className="page-nav-button page-nav-button-left h-[40px] w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center"
+                      style={{
+                        color: gridPage === 0 ? '#d1d5db' : '#4242ea',
+                        backgroundColor: '#ffffff',
+                        marginRight: '5px'
+                      }}
+                      aria-label="Previous page"
+                    >
+                      <ChevronLeft className="w-[30px] h-[30px]" strokeWidth={1.5} />
               </button>
               
-              <div className="text-sm font-semibold text-gray-700">
-                Page {gridPage + 1} of {Math.ceil(totalProfiles / 8)}
+              <div className="text-base text-gray-700 w-28 text-center bg-white rounded-md border-0 h-10 px-[15px] flex items-center justify-center">
+                <span className="font-bold">P. {String(gridPage + 1).padStart(2, '0')}</span><span style={{marginLeft: 'calc(0.25em + 2px)', marginRight: '0.25em'}}>/</span>{String(Math.ceil(totalProfiles / 8)).padStart(2, '0')}
               </div>
 
               <button
                 onClick={() => setGridPage(Math.min(Math.ceil(totalProfiles / 8) - 1, gridPage + 1))}
                 disabled={gridPage >= Math.ceil(totalProfiles / 8) - 1}
-                className="flex items-center gap-3 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                className="page-nav-button h-[40px] w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center"
+                style={{
+                  color: gridPage >= Math.ceil(totalProfiles / 8) - 1 ? '#d1d5db' : '#4242ea',
+                  backgroundColor: '#ffffff',
+                  marginLeft: '5px'
+                }}
+                aria-label="Next page"
               >
-                <span className="text-sm" style={{color: gridPage < Math.ceil(totalProfiles / 8) - 1 ? '#4242ea' : '#9ca3af'}}>Next</span>
-                <div 
-                  className="w-10 h-10 rounded-full flex items-center justify-center transition-all"
-                  style={{backgroundColor: gridPage < Math.ceil(totalProfiles / 8) - 1 ? '#4242ea' : '#e5e7eb'}}
-                >
-                  <ChevronRight className="w-5 h-5" style={{color: gridPage < Math.ceil(totalProfiles / 8) - 1 ? 'white' : '#9ca3af'}} />
-                </div>
+                <ChevronRight className="w-[30px] h-[30px]" strokeWidth={1.5} />
               </button>
             </div>
             )}
@@ -1565,14 +1832,48 @@ function PersonDetailPage() {
 
           {/* List View */}
           {layoutView === 'list' && (
+            <>
+              {viewMode === 'projects' && filteredProjects.length === 0 ? (
+                <div className="flex flex-col items-center justify-center" style={{minHeight: 'calc(100vh - 12rem)', gap: '1rem'}}>
+                  <Frown className="text-[#4242ea] error-icon" style={{width: '3rem', height: '3rem'}} strokeWidth={1.5} stroke="#4242ea" />
+                  <p className="text-[#4242ea] uppercase" style={{fontFamily: "'Galano Grotesque', sans-serif", fontSize: '1.5rem', fontWeight: 400}}>
+                    Sorry! Can't find any projects
+                  </p>
+                  <button
+                    style={{marginTop: '1rem'}}
+                    onClick={() => {
+                      setProjectFilters({ search: '', skills: [], sectors: [] });
+                    }}
+                    className="page-nav-button h-10 px-6 rounded-full border-[1.5px] border-[#4242ea] bg-[#e3e3e3] text-[#4242ea] transition-all"
+                  >
+                    <span className="relative z-10">Clear Search</span>
+                  </button>
+                </div>
+              ) : viewMode === 'people' && filteredProfiles.length === 0 ? (
+                <div className="flex flex-col items-center justify-center" style={{minHeight: 'calc(100vh - 12rem)', gap: '1rem'}}>
+                  <Frown className="text-[#4242ea] error-icon" style={{width: '3rem', height: '3rem'}} strokeWidth={1.5} stroke="#4242ea" />
+                  <p className="text-[#4242ea] uppercase" style={{fontFamily: "'Galano Grotesque', sans-serif", fontSize: '1.5rem', fontWeight: 400}}>
+                    Sorry! Can't find anyone
+                  </p>
+                  <button
+                    style={{marginTop: '1rem'}}
+                    onClick={() => {
+                      setPeopleFilters({ search: '', skills: [], industries: [], openToWork: false });
+                    }}
+                    className="page-nav-button h-10 px-6 rounded-full border-[1.5px] border-[#4242ea] bg-[#e3e3e3] text-[#4242ea] transition-all"
+                  >
+                    <span className="relative z-10">Clear Search</span>
+                  </button>
+                </div>
+              ) : (
             <Card className="rounded-xl border-2 border-white shadow-none mb-12" style={{
               backgroundColor: 'white',
-              animation: 'fadeIn 0.3s ease-in-out',
+              animation: 'fadeInList 0.3s ease-in-out',
             }}>
               <CardContent className="p-6">
                 {viewMode === 'projects' && (
                   <div>
-                    {allProjects.map((proj, index) => (
+                    {filteredProjects.map((proj, index) => (
                       <div key={proj.slug}>
                         {index > 0 && <div className="border-t border-gray-200 my-0"></div>}
                         <div 
@@ -1673,7 +1974,24 @@ function PersonDetailPage() {
                 )}
                 {viewMode === 'people' && (
                   <div>
-                    {filteredProfiles.map((prof, index) => (
+                    {filteredProfiles.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center gap-4" style={{minHeight: 'calc(100vh - 12rem)'}}>
+                        <p className="text-[#4242ea] uppercase" style={{fontFamily: "'Galano Grotesque', sans-serif", fontSize: '1.5rem', fontWeight: 400, display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
+                          Sorry! Can't find anyone
+                          <Frown className="text-[#4242ea]" style={{width: '1.5rem', height: '1.5rem'}} strokeWidth={1.5} />
+                        </p>
+                        <button
+                          onClick={() => {
+                            setPeopleFilters({ ...peopleFilters, search: '' });
+                          }}
+                          className="h-10 px-6 rounded-full bg-[#4242ea] text-white font-semibold hover:opacity-90 transition-opacity"
+                          style={{fontFamily: "'Galano Grotesque', sans-serif"}}
+                        >
+                          Clear Search
+                        </button>
+                      </div>
+                    ) : (
+                      filteredProfiles.map((prof, index) => (
                       <div key={prof.slug}>
                         {index > 0 && <div className="border-t border-gray-200 my-0"></div>}
                         <div 
@@ -1760,78 +2078,51 @@ function PersonDetailPage() {
                           </div>
                         </div>
                       </div>
-                    ))}
+                    )))}
                   </div>
                 )}
               </CardContent>
             </Card>
+              )}
+            </>
           )}
 
           {/* Detail View */}
           {layoutView === 'detail' && (
             <>
-          {/* Navigation Arrows - fixed vertically, positioned relative to card horizontally - Hidden on mobile */}
-          <div className="hidden md:block sticky top-1/2 -translate-y-1/2 left-0 right-0 h-0 pointer-events-none z-50">
-            <button
-              onClick={handlePrevious}
-              disabled={!canGoPrevious}
-              className="absolute flex flex-col items-center gap-3 transition-all disabled:opacity-30 disabled:cursor-not-allowed pointer-events-auto"
-              style={{left: '-70px'}}
-              aria-label="Previous profile"
-            >
-              <div className="rounded-full p-3 shadow-lg transition-all hover:scale-110 disabled:hover:scale-100" style={{backgroundColor: '#4242ea'}}>
-                <ChevronLeft className="w-6 h-6 text-white" />
-              </div>
-              <span className="text-xs text-gray-500">Previous</span>
-            </button>
-
-            <button
-              onClick={handleNext}
-              disabled={!canGoNext}
-              className="absolute flex flex-col items-center gap-3 transition-all disabled:opacity-30 disabled:cursor-not-allowed pointer-events-auto"
-              style={{right: '-70px'}}
-              aria-label="Next profile"
-            >
-              <div className="rounded-full p-3 shadow-lg transition-all hover:scale-110 disabled:hover:scale-100" style={{backgroundColor: '#4242ea'}}>
-                <ChevronRight className="w-6 h-6 text-white" />
-              </div>
-              <span className="text-xs text-gray-500">Next</span>
-            </button>
-          </div>
-
           {/* Mobile Navigation - Bottom Fixed */}
           {currentLength > 1 && (
-          <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 px-4 py-3 flex items-center justify-between shadow-lg">
+          <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 px-4 py-3 flex items-center justify-center shadow-lg">
             <button
               onClick={handlePrevious}
               disabled={!canGoPrevious}
-              className="flex items-center gap-3 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+              className="page-nav-button page-nav-button-left h-[40px] w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center"
+              style={{
+                color: !canGoPrevious ? '#d1d5db' : '#4242ea',
+                backgroundColor: '#ffffff',
+                marginRight: '5px'
+              }}
+              aria-label="Previous"
             >
-              <div 
-                className="w-10 h-10 rounded-full flex items-center justify-center transition-all"
-                style={{backgroundColor: canGoPrevious ? '#4242ea' : '#e5e7eb'}}
-              >
-                <ChevronLeft className="w-5 h-5" style={{color: canGoPrevious ? 'white' : '#9ca3af'}} />
-              </div>
-              <span className="text-sm" style={{color: canGoPrevious ? '#4242ea' : '#9ca3af'}}>Previous</span>
+              <ChevronLeft className="w-[30px] h-[30px]" strokeWidth={1.5} />
             </button>
             
-            <div className="text-sm font-semibold text-gray-700">
-              {currentIndex + 1} / {currentLength}
+            <div className="text-base text-gray-700 w-28 text-center bg-white rounded-md border-0 h-10 px-[15px] flex items-center justify-center">
+              <span className="font-bold">P. {String(currentIndex + 1).padStart(2, '0')}</span><span style={{marginLeft: 'calc(0.25em + 2px)', marginRight: '0.25em'}}>/</span>{String(currentLength).padStart(2, '0')}
             </div>
 
             <button
               onClick={handleNext}
               disabled={!canGoNext}
-              className="flex items-center gap-3 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+              className="page-nav-button h-[40px] w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center"
+              style={{
+                color: !canGoNext ? '#d1d5db' : '#4242ea',
+                backgroundColor: '#ffffff',
+                marginLeft: '5px'
+              }}
+              aria-label="Next"
             >
-              <span className="text-sm" style={{color: canGoNext ? '#4242ea' : '#9ca3af'}}>Next</span>
-              <div 
-                className="w-10 h-10 rounded-full flex items-center justify-center transition-all"
-                style={{backgroundColor: canGoNext ? '#4242ea' : '#e5e7eb'}}
-              >
-                <ChevronRight className="w-5 h-5" style={{color: canGoNext ? 'white' : '#9ca3af'}} />
-              </div>
+              <ChevronRight className="w-[30px] h-[30px]" strokeWidth={1.5} />
             </button>
           </div>
           )}
@@ -1946,7 +2237,7 @@ function PersonDetailPage() {
                     <div className="mb-4 pb-4 border-b">
                       <div className="flex items-center justify-between mb-1">
                         <h3 className="text-lg font-bold">Select Projects</h3>
-                        {person.projects.length > 3 && (
+                        {filteredPersonProjects.length > 3 && (
                           <div className="flex gap-2">
                             <button
                               onClick={() => setProjectCarouselIndex(Math.max(0, projectCarouselIndex - 3))}
@@ -1957,10 +2248,10 @@ function PersonDetailPage() {
                             </button>
                             <button
                               onClick={() => {
-                                const maxIndex = Math.floor((person.projects.length - 1) / 3) * 3;
+                                const maxIndex = Math.floor((filteredPersonProjects.length - 1) / 3) * 3;
                                 setProjectCarouselIndex(Math.min(maxIndex, projectCarouselIndex + 3));
                               }}
-                              disabled={projectCarouselIndex >= Math.floor((person.projects.length - 1) / 3) * 3}
+                              disabled={projectCarouselIndex >= Math.floor((filteredPersonProjects.length - 1) / 3) * 3}
                               className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
                             >
                               <ChevronRight className="w-4 h-4" />
@@ -1968,8 +2259,25 @@ function PersonDetailPage() {
                           </div>
                         )}
                       </div>
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-3">
-                        {person.projects.slice(projectCarouselIndex, projectCarouselIndex + 3).map((project, idx) => {
+                      {filteredPersonProjects.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-8" style={{gap: '1rem'}}>
+                          <Frown className="text-[#4242ea] error-icon" style={{width: '3rem', height: '3rem'}} strokeWidth={1.5} stroke="#4242ea" />
+                          <p className="text-[#4242ea] uppercase" style={{fontFamily: "'Galano Grotesque', sans-serif", fontSize: '1.5rem', fontWeight: 400}}>
+                            Sorry! Can't find any projects
+                          </p>
+                          <button
+                            style={{marginTop: '1rem'}}
+                            onClick={() => {
+                              setProjectFilters({ search: '', skills: [], sectors: [] });
+                            }}
+                            className="page-nav-button h-10 px-6 rounded-full border-[1.5px] border-[#4242ea] bg-[#e3e3e3] text-[#4242ea] transition-all"
+                          >
+                            <span className="relative z-10">Clear Search</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-3">
+                          {filteredPersonProjects.slice(projectCarouselIndex, projectCarouselIndex + 3).map((project, idx) => {
                           // Cycle through different icons for variety (fallback if no image)
                           const icons = [Camera, Code, Rocket, Zap, Lightbulb, Target];
                           const Icon = icons[(projectCarouselIndex + idx) % icons.length];
@@ -2034,6 +2342,7 @@ function PersonDetailPage() {
                           );
                         })}
                       </div>
+                      )}
                     </div>
                   )}
 
