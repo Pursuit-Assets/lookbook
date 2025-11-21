@@ -1,7 +1,8 @@
-import { useState, useEffect, useLayoutEffect, useMemo, useCallback, memo } from 'react';
+import { useState, useEffect, useLayoutEffect, useMemo, useCallback, memo, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { profilesAPI, projectsAPI, getImageUrl } from '../utils/api';
 import analytics from '../utils/analytics';
+import { useLoadingProgress } from '../contexts/LoadingProgressContext';
 import LazyVideo from '../components/LazyVideo';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -11,7 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { Linkedin, Globe, Camera, Code, Rocket, Zap, Lightbulb, Target, Square, Grid3x3, List, ChevronLeft, ChevronRight, Menu, X, Frown } from 'lucide-react';
+import { Linkedin, Globe, Camera, Code, Rocket, Zap, Lightbulb, Target, Square, Grid3x3, List, ChevronLeft, ChevronRight, Menu, X, Frown, Search } from 'lucide-react';
 
 // Custom hook for debounced value
 const useDebounce = (value, delay) => {
@@ -41,6 +42,59 @@ const adjustColor = (hex, percent) => {
     (G < 255 ? G < 1 ? 0 : G : 255) * 0x100 +
     (B < 255 ? B < 1 ? 0 : B : 255))
     .toString(16).slice(1);
+};
+
+// Reusable Page Navigation Button Component
+const PageNavButton = ({ onClick, disabled, direction = 'left', ariaLabel }) => {
+  const isLeft = direction === 'left';
+  const Icon = isLeft ? ChevronLeft : ChevronRight;
+  const marginStyle = isLeft ? { marginRight: '5px' } : { marginLeft: '5px' };
+  
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`page-nav-button ${isLeft ? 'page-nav-button-left' : ''} h-[40px] w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center`}
+      style={{
+        color: disabled ? '#d1d5db' : '#4242ea',
+        backgroundColor: '#ffffff',
+        ...marginStyle
+      }}
+      aria-label={ariaLabel}
+    >
+      <Icon className="w-[30px] h-[30px]" strokeWidth={1.5} />
+    </button>
+  );
+};
+
+// Reusable Page Display Component
+const PageDisplay = ({ current, total, viewMode, isList = false, totalCount = null }) => {
+  const width = isList 
+    ? (viewMode === 'people' ? 'w-36' : 'w-40')
+    : (viewMode === 'people' ? 'w-36' : 'w-40');
+  const padding = isList ? 'px-[7.5px]' : 'px-[15px]';
+  
+  if (total === 0) {
+    return (
+      <div className={`text-base text-gray-700 ${width} text-center bg-white rounded-md border-0 h-10 ${padding} flex items-center justify-center`}>
+        <span>No results</span>
+      </div>
+    );
+  }
+  
+  if (isList && totalCount !== null) {
+    return (
+      <div className={`text-base text-gray-700 ${width} text-center bg-white rounded-md border-0 h-10 ${padding} flex items-center justify-center`}>
+        <span className="font-bold">{totalCount}</span><span style={{marginLeft: '0.25em'}}>{viewMode === 'people' ? 'People' : 'Projects'}</span>
+      </div>
+    );
+  }
+  
+  return (
+    <div className={`text-base text-gray-700 ${width} text-center bg-white rounded-md border-0 h-10 ${padding} flex items-center justify-center`}>
+      <span className="font-bold">{String(current).padStart(2, '0')}</span><span style={{marginLeft: 'calc(0.125em + 1px)', marginRight: '0.125em'}}>/</span>{String(Math.max(1, total)).padStart(2, '0')} <span style={{marginLeft: '0.25em'}}>Pages</span>
+    </div>
+  );
 };
 
 // Helper function to format name as "FirstName L."
@@ -512,7 +566,10 @@ function PersonDetailPage() {
   const [person, setPerson] = useState(null);
   const [project, setProject] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [gridListLoading, setGridListLoading] = useState(false); // Loading state for grid/list views
   const [error, setError] = useState(null);
+  const { startLoading, setLoadingProgress, completeLoading } = useLoadingProgress();
+  const isFetchingRef = useRef(false); // Track if we're currently fetching to prevent multiple simultaneous fetches
   const [allProfiles, setAllProfiles] = useState([]);
   const [allProjects, setAllProjects] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(-1);
@@ -537,10 +594,16 @@ function PersonDetailPage() {
   // Sidebar state
   const [filterView, setFilterView] = useState(initialViewMode);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [searchHovered, setSearchHovered] = useState(false);
+  const [searchCommitted, setSearchCommitted] = useState(false); // Track if search has been committed with Enter
+  const searchInputRef = useRef(null);
+  const searchInputRefDesktop = useRef(null);
   
-  // Filter state
+  // Filter state - separate input value from committed search value
+  const [peopleSearchInput, setPeopleSearchInput] = useState(''); // What user types
   const [peopleFilters, setPeopleFilters] = useState({
-    search: '',
+    search: '', // Committed search value (applied to filtering)
     skills: [],
     industries: [],
     openToWork: false
@@ -550,8 +613,9 @@ function PersonDetailPage() {
     industries: []
   });
   
+  const [projectSearchInput, setProjectSearchInput] = useState(''); // What user types
   const [projectFilters, setProjectFilters] = useState({
-    search: '',
+    search: '', // Committed search value (applied to filtering)
     skills: [],
     sectors: []
   });
@@ -632,14 +696,11 @@ function PersonDetailPage() {
   // Filter person's projects based on project filters (for detail view)
   const filteredPersonProjects = useMemo(() => {
     if (!person?.projects) {
-      console.log('No person.projects found');
       return [];
     }
     
     // Handle case where projects might be null or not an array
     const projectsArray = Array.isArray(person.projects) ? person.projects : [];
-    console.log('Person projects:', projectsArray.length, 'projects found');
-    console.log('Sample project:', projectsArray[0]);
     
     // If no filters are applied, return all projects
     const hasSearch = debouncedProjectSearch && debouncedProjectSearch.trim().length > 0;
@@ -647,7 +708,6 @@ function PersonDetailPage() {
     const hasSectorsFilter = projectFilters.sectors.length > 0;
     
     if (!hasSearch && !hasSkillsFilter && !hasSectorsFilter) {
-      console.log('No filters applied, returning all projects');
       return projectsArray;
     }
     
@@ -691,8 +751,6 @@ function PersonDetailPage() {
       return true;
     });
     
-    console.log('Filtered person projects:', filtered.length, 'out of', projectsArray.length, 'projects');
-    console.log('Project filters:', { search: debouncedProjectSearch, skills: projectFilters.skills, sectors: projectFilters.sectors });
     return filtered;
   }, [person?.projects, debouncedProjectSearch, projectFilters.skills, projectFilters.sectors]);
 
@@ -708,7 +766,23 @@ function PersonDetailPage() {
 
   // Fetch data based on current view
   useEffect(() => {
+    let isMounted = true;
+    
     const fetchData = async () => {
+      // Prevent multiple simultaneous fetches
+      if (isFetchingRef.current) {
+        return;
+      }
+      
+      if (layoutView === 'grid' || layoutView === 'list') {
+        isFetchingRef.current = true;
+        if (isMounted) {
+          setGridListLoading(true);
+          startLoading();
+          setLoadingProgress(10); // Start at 10%
+        }
+      }
+      
       if (layoutView === 'grid') {
         // Grid view: fetch paginated data (8 per page)
         const pageSize = 8;
@@ -716,6 +790,7 @@ function PersonDetailPage() {
         
         if (viewMode === 'people') {
           try {
+            setLoadingProgress(30);
             const response = await profilesAPI.getAll({
               limit: pageSize,
               offset,
@@ -725,16 +800,31 @@ function PersonDetailPage() {
               openToWork: peopleFilters.openToWork ? true : undefined
             });
             
-            if (response.success) {
-              setAllProfiles(response.data);
-              const total = response.pagination?.total || response.total || response.data.length;
+            setLoadingProgress(80);
+            if (response && response.success) {
+              setAllProfiles(response.data || []);
+              const total = response.pagination?.total || response.total || (response.data ? response.data.length : 0);
               setTotalProfiles(total);
+            } else {
+              console.error('API response error:', response);
+              setAllProfiles([]);
+              setTotalProfiles(0);
             }
+            setLoadingProgress(100);
+            completeLoading();
           } catch (err) {
             console.error('Error fetching profiles:', err);
+            setAllProfiles([]);
+            setTotalProfiles(0);
+            setLoadingProgress(100);
+            completeLoading();
+          } finally {
+            setGridListLoading(false);
+            isFetchingRef.current = false;
           }
         } else if (viewMode === 'projects') {
           try {
+            setLoadingProgress(30);
             const response = await projectsAPI.getAll({
               limit: pageSize,
               offset,
@@ -743,19 +833,28 @@ function PersonDetailPage() {
               sectors: projectFilters.sectors.length > 0 ? projectFilters.sectors : undefined
             });
             
+            setLoadingProgress(80);
             if (response.success) {
               setAllProjects(response.data);
               const total = response.pagination?.total || response.total || response.data.length;
               setTotalProjects(total);
             }
+            setLoadingProgress(100);
+            completeLoading();
           } catch (err) {
             console.error('Error fetching projects:', err);
+            setLoadingProgress(100);
+            completeLoading();
+          } finally {
+            setGridListLoading(false);
+            isFetchingRef.current = false;
           }
         }
       } else if (layoutView === 'list') {
         // List view: fetch filtered data
         if (viewMode === 'people') {
           try {
+            setLoadingProgress(30);
             const response = await profilesAPI.getAll({
               limit: 100,
               search: debouncedPeopleSearch,
@@ -764,16 +863,31 @@ function PersonDetailPage() {
               openToWork: peopleFilters.openToWork ? true : undefined
             });
             
-            if (response.success) {
-              setAllProfiles(response.data);
-              const total = response.pagination?.total || response.total || response.data.length;
+            setLoadingProgress(80);
+            if (response && response.success) {
+              setAllProfiles(response.data || []);
+              const total = response.pagination?.total || response.total || (response.data ? response.data.length : 0);
               setTotalProfiles(total);
+            } else {
+              console.error('API response error:', response);
+              setAllProfiles([]);
+              setTotalProfiles(0);
             }
+            setLoadingProgress(100);
+            completeLoading();
           } catch (err) {
             console.error('Error fetching profiles:', err);
+            setAllProfiles([]);
+            setTotalProfiles(0);
+            setLoadingProgress(100);
+            completeLoading();
+          } finally {
+            setGridListLoading(false);
+            isFetchingRef.current = false;
           }
         } else if (viewMode === 'projects') {
           try {
+            setLoadingProgress(30);
             const response = await projectsAPI.getAll({
               limit: 100,
               search: debouncedProjectSearch,
@@ -781,13 +895,21 @@ function PersonDetailPage() {
               sectors: projectFilters.sectors.length > 0 ? projectFilters.sectors : undefined
             });
             
+            setLoadingProgress(80);
             if (response.success) {
               setAllProjects(response.data);
               const total = response.pagination?.total || response.total || response.data.length;
               setTotalProjects(total);
             }
+            setLoadingProgress(100);
+            completeLoading();
           } catch (err) {
             console.error('Error fetching projects:', err);
+            setLoadingProgress(100);
+            completeLoading();
+          } finally {
+            setGridListLoading(false);
+            isFetchingRef.current = false;
           }
         }
       }
@@ -796,7 +918,12 @@ function PersonDetailPage() {
     };
     
     fetchData();
-  }, [gridPage, viewMode, debouncedPeopleSearch, debouncedProjectSearch, peopleFilters, projectFilters, layoutView]);
+    
+    return () => {
+      isMounted = false;
+      isFetchingRef.current = false;
+    };
+  }, [gridPage, viewMode, debouncedPeopleSearch, debouncedProjectSearch, peopleFilters.skills, peopleFilters.industries, peopleFilters.openToWork, projectFilters.skills, projectFilters.sectors, layoutView]);
 
   // Fetch filters once on mount - these are cached
   useEffect(() => {
@@ -807,14 +934,22 @@ function PersonDetailPage() {
           projectsAPI.getFilters()
         ]);
         
-        if (peopleFiltersData.success) {
-          setAvailablePeopleFilters(peopleFiltersData.data);
+        if (peopleFiltersData && peopleFiltersData.success) {
+          setAvailablePeopleFilters(peopleFiltersData.data || { skills: [], industries: [] });
+        } else {
+          console.error('Failed to fetch people filters:', peopleFiltersData);
+          setAvailablePeopleFilters({ skills: [], industries: [] });
         }
-        if (projectFiltersData.success) {
-          setAvailableProjectFilters(projectFiltersData.data);
+        if (projectFiltersData && projectFiltersData.success) {
+          setAvailableProjectFilters(projectFiltersData.data || { skills: [], sectors: [] });
+        } else {
+          console.error('Failed to fetch project filters:', projectFiltersData);
+          setAvailableProjectFilters({ skills: [], sectors: [] });
         }
       } catch (err) {
         console.error('Error fetching filters:', err);
+        setAvailablePeopleFilters({ skills: [], industries: [] });
+        setAvailableProjectFilters({ skills: [], sectors: [] });
       }
     };
     fetchFilters();
@@ -833,18 +968,36 @@ function PersonDetailPage() {
     setLayoutView('detail');
     setLoading(true);
     
+    // Clear project filters when entering detail view to show all projects
+    if (viewMode === 'people') {
+      setProjectFilters({ search: '', skills: [], sectors: [] });
+    }
+    
     if (viewMode === 'people') {
       const fetchPersonAndList = async () => {
+        startLoading();
+        setLoadingProgress(10);
         try {
+          setLoadingProgress(30);
           // Fetch both in parallel
           // In detail view, ALWAYS fetch full unfiltered list for navigation
           // This ensures we have the complete list regardless of previous filters
-          const [personData, allData] = await Promise.all([
+          const [personDataResult, allDataResult] = await Promise.allSettled([
             profilesAPI.getBySlug(slug),
             profilesAPI.getAll({ limit: 100 }) // Always fetch full unfiltered list
           ]);
           
-          if (personData.success) {
+          // Extract results, handling both success and error cases
+          const personData = personDataResult.status === 'fulfilled' 
+            ? personDataResult.value 
+            : (personDataResult.reason?.response?.data || { success: false, error: 'Person not found' });
+          
+          const allData = allDataResult.status === 'fulfilled'
+            ? allDataResult.value
+            : { success: false };
+          
+          setLoadingProgress(70);
+          if (personData && personData.success) {
             setPerson(personData.data);
             setProject(null);
             
@@ -856,22 +1009,28 @@ function PersonDetailPage() {
             );
             
             // Always update allProfiles with full unfiltered list for navigation
-            if (allData.success) {
+            if (allData && allData.success) {
               setAllProfiles(allData.data);
               setTotalProfiles(allData.data.length);
             }
             
             // Find current index in the full list
-            const profiles = allData.success ? allData.data : allProfiles;
+            const profiles = allData && allData.success ? allData.data : allProfiles;
             const index = profiles.findIndex(p => p.slug === slug);
             setCurrentIndex(index >= 0 ? index : -1);
             setError(null);
           } else {
-            setError('Person not found');
+            const errorMessage = personData?.error || 'Person not found';
+            setError(errorMessage);
           }
+          setLoadingProgress(100);
+          completeLoading();
         } catch (err) {
           console.error('Error fetching person:', err);
-          setError('Person not found');
+          const errorMessage = err.response?.data?.error || err.response?.data?.message || 'Person not found';
+          setError(errorMessage);
+          setLoadingProgress(100);
+          completeLoading();
         } finally {
           setLoading(false);
         }
@@ -879,7 +1038,10 @@ function PersonDetailPage() {
       fetchPersonAndList();
     } else if (viewMode === 'projects') {
       const fetchProjectAndList = async () => {
+        startLoading();
+        setLoadingProgress(10);
         try {
+          setLoadingProgress(30);
           // Fetch both in parallel
           // In detail view, ALWAYS fetch full unfiltered list for navigation
           // This ensures we have the complete list regardless of previous filters
@@ -888,6 +1050,7 @@ function PersonDetailPage() {
             projectsAPI.getAll({ limit: 100 }) // Always fetch full unfiltered list
           ]);
           
+          setLoadingProgress(70);
           if (projectData.success) {
             setProject(projectData.data);
             setPerson(null);
@@ -914,9 +1077,13 @@ function PersonDetailPage() {
           } else {
             setError('Project not found');
           }
+          setLoadingProgress(100);
+          completeLoading();
         } catch (err) {
           console.error('Error fetching project:', err);
           setError('Project not found');
+          setLoadingProgress(100);
+          completeLoading();
         } finally {
           setLoading(false);
         }
@@ -932,18 +1099,18 @@ function PersonDetailPage() {
   // This prevents navigation issues when filters are applied
   useEffect(() => {
     if (layoutView === 'detail' && slug) {
-      if (viewMode === 'people' && person && allProfiles.length > 0) {
-        const index = allProfiles.findIndex(p => p.slug === person.slug);
+    if (viewMode === 'people' && person && allProfiles.length > 0) {
+      const index = allProfiles.findIndex(p => p.slug === person.slug);
         // Only update if found (index >= 0), otherwise keep current index
         // This prevents switching to a different person when filters exclude the current one
         if (index >= 0) {
-          setCurrentIndex(index);
+      setCurrentIndex(index);
         }
-      } else if (viewMode === 'projects' && project && allProjects.length > 0) {
-        const index = allProjects.findIndex(p => p.slug === project.slug);
+    } else if (viewMode === 'projects' && project && allProjects.length > 0) {
+      const index = allProjects.findIndex(p => p.slug === project.slug);
         if (index >= 0) {
-          setCurrentIndex(index);
-        }
+      setCurrentIndex(index);
+    }
       }
     }
   }, [allProfiles, allProjects, person, project, viewMode, layoutView, slug]);
@@ -1113,7 +1280,7 @@ function PersonDetailPage() {
   const currentLength = viewMode === 'people' ? allProfiles.length : allProjects.length;
   const canGoNext = currentIndex >= 0 && currentIndex < currentLength - 1;
 
-  if (loading) return <div className="flex items-center justify-center min-h-screen" style={{backgroundColor: '#e3e3e3'}}>Loading...</div>;
+  if (loading) return <div className="min-h-screen" style={{backgroundColor: '#e3e3e3'}}></div>;
   // Only show error if we're done loading and viewMode has been set
   if (error && slug && !loading && viewMode) return <div className="flex items-center justify-center min-h-screen text-red-500" style={{backgroundColor: '#e3e3e3'}}>{error}</div>;
   if (!person && !project && slug && layoutView === 'detail') return <div className="flex items-center justify-center min-h-screen" style={{backgroundColor: '#e3e3e3'}}>Not found</div>;
@@ -1136,37 +1303,206 @@ function PersonDetailPage() {
 
       {/* Mobile: Fixed Top Right - Search, View Toggles, and Hamburger in one unit */}
       <div className="lg:hidden fixed top-2 right-2 z-50 flex items-center gap-2">
-        {layoutView === 'grid' && (
-          <div className="relative">
+        <div 
+          className="relative"
+          style={{
+            paddingTop: (searchFocused || searchCommitted || (viewMode === 'people' ? peopleFilters.search : projectFilters.search)) ? '20px' : '0',
+            paddingBottom: (searchFocused || searchCommitted || (viewMode === 'people' ? peopleFilters.search : projectFilters.search)) ? '20px' : '0',
+            marginTop: (searchFocused || searchCommitted || (viewMode === 'people' ? peopleFilters.search : projectFilters.search)) ? '-20px' : '0',
+            marginBottom: (searchFocused || searchCommitted || (viewMode === 'people' ? peopleFilters.search : projectFilters.search)) ? '-20px' : '0',
+            overflow: 'visible'
+          }}
+          onMouseEnter={() => setSearchHovered(true)}
+          onMouseLeave={() => {
+            const currentInput = viewMode === 'people' ? peopleSearchInput : projectSearchInput;
+            const currentCommitted = viewMode === 'people' ? peopleFilters.search : projectFilters.search;
+            
+            // If there's uncommitted text (user typed but didn't hit Enter), collapse
+            if (currentInput && currentInput !== currentCommitted) {
+              setSearchHovered(false);
+              setSearchFocused(false);
+              if (searchInputRef.current) {
+                searchInputRef.current.blur();
+              }
+              // Clear uncommitted input
+              if (viewMode === 'people') {
+                setPeopleSearchInput('');
+              } else {
+                setProjectSearchInput('');
+              }
+            } else if (!currentCommitted) {
+              // If no committed search and no input, collapse
+              setSearchHovered(false);
+              setSearchFocused(false);
+              if (searchInputRef.current) {
+                searchInputRef.current.blur();
+              }
+            }
+            // If there's a committed search, don't collapse on mouse leave - keep tray open
+          }}
+        >
+          <div 
+            className="absolute top-1/2 -translate-y-1/2 pointer-events-none transition-all duration-300 ease-in-out"
+            style={{ 
+              left: searchHovered && !searchFocused ? '10px' : '7.5px', // Center in square (40px - 25px) / 2 = 7.5px
+              opacity: (searchFocused || searchCommitted) ? 0 : 1,
+              zIndex: 1
+            }}
+          >
+            <Search 
+              className="w-[25px] h-[25px]" 
+              strokeWidth={1.5}
+              style={{ color: '#4242ea' }}
+            />
+          </div>
+          {searchHovered && !searchFocused && (
+            <span 
+              className="absolute pointer-events-none whitespace-nowrap text-base md:text-sm"
+              style={{
+                top: '50%',
+                left: '45px', // 10px (icon left) + 25px (icon width) + 10px (gap) = 45px
+                transform: 'translateY(-50%)',
+                color: '#d1d5db',
+                fontSize: '16px',
+                zIndex: 10,
+                opacity: 0,
+                animation: 'fadeInText 0.1s ease-in-out 0.3s forwards',
+                willChange: 'opacity',
+                display: (viewMode === 'people' ? peopleFilters.search : projectFilters.search) ? 'none' : 'block'
+              }}
+            >
+              Click to search
+            </span>
+          )}
             <Input
-              placeholder="Search"
-              value={viewMode === 'people' ? peopleFilters.search : projectFilters.search}
+            ref={searchInputRef}
+            value={searchCommitted ? (viewMode === 'people' ? peopleFilters.search : projectFilters.search) : (viewMode === 'people' ? peopleSearchInput : projectSearchInput)}
               onChange={(e) => {
                 if (viewMode === 'people') {
-                  setPeopleFilters({ ...peopleFilters, search: e.target.value });
+                setPeopleSearchInput(e.target.value);
                 } else {
-                  setProjectFilters({ ...projectFilters, search: e.target.value });
+                setProjectSearchInput(e.target.value);
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                // Commit the search
+                if (viewMode === 'people') {
+                  setPeopleFilters({ ...peopleFilters, search: peopleSearchInput });
+                } else {
+                  setProjectFilters({ ...projectFilters, search: projectSearchInput });
                 }
-              }}
-              className="search-input w-32 h-10 bg-white pr-14"
-            />
-            {(viewMode === 'people' ? peopleFilters.search : projectFilters.search) && (
+                setSearchCommitted(true);
+                // Remove focus to make it inactive (no cursor)
+                if (searchInputRef.current) {
+                  searchInputRef.current.blur();
+                }
+              }
+            }}
+            onFocus={() => {
+              setSearchFocused(true);
+              // If there's a committed search, uncommit it when user clicks to search again
+              if (searchCommitted) {
+                setSearchCommitted(false);
+                // Set the input to the committed search value so user can see/edit it
+                if (viewMode === 'people') {
+                  setPeopleSearchInput(peopleFilters.search);
+                } else {
+                  setProjectSearchInput(projectFilters.search);
+                }
+              }
+            }}
+            onBlur={(e) => {
+              // Use setTimeout to check if focus moved to a filter element or clear button
+              setTimeout(() => {
+                const activeElement = document.activeElement;
+                const clickedFilter = activeElement?.closest('aside') || activeElement?.closest('[role="checkbox"]') || activeElement?.closest('label');
+                const clickedClearButton = activeElement?.closest('button[aria-label="Clear search"]');
+                
+                // Don't blur if clicking on clear button or filter element
+                if (clickedClearButton) {
+                  return; // Keep focus, don't do anything
+                }
+                
+                // Only clear if we didn't click on a filter element
+                if (!clickedFilter && !activeElement?.matches('input')) {
+                  const currentInput = viewMode === 'people' ? peopleSearchInput : projectSearchInput;
+                  const currentCommitted = viewMode === 'people' ? peopleFilters.search : projectFilters.search;
+                  
+                  // If there's uncommitted text, clear it and collapse
+                  if (currentInput && currentInput !== currentCommitted) {
+                    setSearchFocused(false);
+                    setSearchHovered(false);
+                    if (viewMode === 'people') {
+                      setPeopleSearchInput('');
+                    } else {
+                      setProjectSearchInput('');
+                    }
+                  } else if (!currentCommitted) {
+                    // If no committed search, collapse
+                    setSearchFocused(false);
+                    setSearchHovered(false);
+                  } else {
+                    // If there's a committed search, just lose focus but keep tray open
+                    setSearchFocused(false);
+                    // Don't set searchHovered to false - keep tray open
+                  }
+                } else {
+                  // Even if clicking on filter, keep tray open if search is committed
+                  if (!searchCommitted) {
+                    setSearchHovered(false);
+                  }
+                }
+              }, 150);
+            }}
+            className={`search-input h-10 transition-all duration-500 ease-in-out ${
+              searchHovered || searchFocused || searchCommitted
+                ? searchFocused && !searchCommitted
+                  ? 'bg-[#4242ea] w-32 pl-[10px] pr-14' 
+                  : 'bg-white w-32 pl-[10px] pr-14' 
+                : 'bg-white w-10 pl-0 pr-0'
+            }`}
+            style={{
+              color: searchFocused && !searchCommitted ? '#fff' : '#000'
+            }}
+          />
+          {((viewMode === 'people' ? peopleSearchInput : projectSearchInput) || (viewMode === 'people' ? peopleFilters.search : projectFilters.search)) && (searchHovered || searchFocused || searchCommitted) && (
               <button
-                onClick={() => {
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                // Clear all search states and collapse the tray
                   if (viewMode === 'people') {
+                  setPeopleSearchInput('');
                     setPeopleFilters({ ...peopleFilters, search: '' });
                   } else {
+                  setProjectSearchInput('');
                     setProjectFilters({ ...projectFilters, search: '' });
                   }
+                setSearchCommitted(false);
+                setSearchFocused(false);
+                setSearchHovered(false);
+                // Blur the input to collapse the tray
+                setTimeout(() => {
+                  if (searchInputRef.current) {
+                    searchInputRef.current.blur();
+                  }
+                }, 0);
                 }}
-                className="absolute right-[10px] top-1/2 -translate-y-1/2 w-4 h-4 lg:w-5 lg:h-5 rounded-full border-[1.5px] border-white flex items-center justify-center search-clear-button transition-all"
+                className="absolute right-[10px] top-1/2 -translate-y-1/2 w-4 h-4 lg:w-5 lg:h-5 rounded-full border-[1.5px] flex items-center justify-center search-clear-button transition-all"
+                data-committed={searchCommitted ? "true" : "false"}
+                style={{
+                  borderColor: searchCommitted ? '#4242ea' : 'white',
+                  backgroundColor: 'transparent'
+                }}
                 aria-label="Clear search"
               >
-                <X className="w-3 h-3 lg:w-4 lg:h-4 text-white search-clear-icon" strokeWidth={2} />
+              <X className="w-3 h-3 lg:w-4 lg:h-4 search-clear-icon" strokeWidth={2} style={{ color: searchCommitted ? '#4242ea' : 'white' }} />
               </button>
             )}
           </div>
-        )}
         {/* View Toggle Icons */}
         <div className="view-toggle-container flex items-center gap-1 bg-white rounded-md border h-10 relative" style={{padding: 0}}>
           <div 
@@ -1225,14 +1561,14 @@ function PersonDetailPage() {
             {/* Page indicator with navigation - left-aligned */}
             {layoutView === 'grid' && (
               <>
-                {viewMode === 'projects' && Math.ceil(totalProjects / 8) > 1 && (
+                {viewMode === 'projects' && (
                   <div className="flex items-center">
                     <button
                       onClick={() => setGridPage(Math.max(0, gridPage - 1))}
-                      disabled={gridPage === 0}
+                      disabled={gridPage === 0 || Math.ceil(totalProjects / 8) <= 1}
                       className="page-nav-button page-nav-button-left h-[40px] w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center"
                       style={{
-                        color: gridPage === 0 ? '#d1d5db' : '#4242ea',
+                        color: (gridPage === 0 || Math.ceil(totalProjects / 8) <= 1) ? '#d1d5db' : '#4242ea',
                         backgroundColor: '#ffffff',
                         marginRight: '5px'
                       }}
@@ -1240,15 +1576,21 @@ function PersonDetailPage() {
                     >
                       <ChevronLeft className="w-[30px] h-[30px]" strokeWidth={1.5} />
                     </button>
-                    <div className="text-base text-gray-700 w-32 text-center bg-white rounded-md border-0 h-10 px-[15px] flex items-center justify-center">
-                      <span className="font-bold">P. {String(gridPage + 1).padStart(2, '0')}</span><span style={{marginLeft: 'calc(0.25em + 2px)', marginRight: '0.25em'}}>/</span>{String(Math.ceil(totalProjects / 8)).padStart(2, '0')}
+                    <div className="text-base text-gray-700 w-40 text-center bg-white rounded-md border-0 h-10 px-[15px] flex items-center justify-center">
+                      {totalProjects === 0 ? (
+                        <span>No results</span>
+                      ) : (
+                        <>
+                          <span className="font-bold">{String(gridPage + 1).padStart(2, '0')}</span><span style={{marginLeft: 'calc(0.125em + 1px)', marginRight: '0.125em'}}>/</span>{String(Math.max(1, Math.ceil(totalProjects / 8))).padStart(2, '0')} <span style={{marginLeft: '0.25em'}}>Pages</span>
+                        </>
+                      )}
                     </div>
                     <button
                       onClick={() => setGridPage(Math.min(Math.ceil(totalProjects / 8) - 1, gridPage + 1))}
-                      disabled={gridPage >= Math.ceil(totalProjects / 8) - 1}
+                      disabled={gridPage >= Math.ceil(totalProjects / 8) - 1 || Math.ceil(totalProjects / 8) <= 1}
                       className="page-nav-button h-[40px] w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center"
                       style={{
-                        color: gridPage >= Math.ceil(totalProjects / 8) - 1 ? '#d1d5db' : '#4242ea',
+                        color: (gridPage >= Math.ceil(totalProjects / 8) - 1 || Math.ceil(totalProjects / 8) <= 1) ? '#d1d5db' : '#4242ea',
                         backgroundColor: '#ffffff',
                         marginLeft: '5px'
                       }}
@@ -1258,14 +1600,14 @@ function PersonDetailPage() {
                     </button>
                   </div>
                 )}
-                {viewMode === 'people' && Math.ceil(totalProfiles / 8) > 1 && (
+                {viewMode === 'people' && (
                   <div className="flex items-center">
                     <button
                       onClick={() => setGridPage(Math.max(0, gridPage - 1))}
-                      disabled={gridPage === 0}
+                      disabled={gridPage === 0 || Math.ceil(totalProfiles / 8) <= 1}
                       className="page-nav-button page-nav-button-left h-[40px] w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center"
                       style={{
-                        color: gridPage === 0 ? '#d1d5db' : '#4242ea',
+                        color: (gridPage === 0 || Math.ceil(totalProfiles / 8) <= 1) ? '#d1d5db' : '#4242ea',
                         backgroundColor: '#ffffff',
                         marginRight: '5px'
                       }}
@@ -1273,15 +1615,21 @@ function PersonDetailPage() {
                     >
                       <ChevronLeft className="w-[30px] h-[30px]" strokeWidth={1.5} />
                     </button>
-                    <div className="text-base text-gray-700 w-28 text-center bg-white rounded-md border-0 h-10 px-[15px] flex items-center justify-center">
-                      <span className="font-bold">P. {String(gridPage + 1).padStart(2, '0')}</span><span style={{marginLeft: 'calc(0.25em + 2px)', marginRight: '0.25em'}}>/</span>{String(Math.ceil(totalProfiles / 8)).padStart(2, '0')}
+                    <div className="text-base text-gray-700 w-36 text-center bg-white rounded-md border-0 h-10 px-[15px] flex items-center justify-center">
+                      {totalProfiles === 0 ? (
+                        <span>No results</span>
+                      ) : (
+                        <>
+                          <span className="font-bold">{String(gridPage + 1).padStart(2, '0')}</span><span style={{marginLeft: 'calc(0.125em + 1px)', marginRight: '0.125em'}}>/</span>{String(Math.max(1, Math.ceil(totalProfiles / 8))).padStart(2, '0')} <span style={{marginLeft: '0.25em'}}>Pages</span>
+                        </>
+                      )}
                     </div>
                     <button
                       onClick={() => setGridPage(Math.min(Math.ceil(totalProfiles / 8) - 1, gridPage + 1))}
-                      disabled={gridPage >= Math.ceil(totalProfiles / 8) - 1}
+                      disabled={gridPage >= Math.ceil(totalProfiles / 8) - 1 || Math.ceil(totalProfiles / 8) <= 1}
                       className="page-nav-button h-[40px] w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center"
                       style={{
-                        color: gridPage >= Math.ceil(totalProfiles / 8) - 1 ? '#d1d5db' : '#4242ea',
+                        color: (gridPage >= Math.ceil(totalProfiles / 8) - 1 || Math.ceil(totalProfiles / 8) <= 1) ? '#d1d5db' : '#4242ea',
                         backgroundColor: '#ffffff',
                         marginLeft: '5px'
                       }}
@@ -1294,18 +1642,18 @@ function PersonDetailPage() {
               </>
             )}
             {layoutView === 'list' && (
-              <div className="h-10 flex items-center text-base font-semibold text-gray-700">
-                {viewMode === 'people' ? filteredProfiles.length : filteredProjects.length} {viewMode === 'people' ? 'People' : 'Projects'}
+              <div className={`text-base text-gray-700 ${viewMode === 'people' ? 'w-36' : 'w-40'} text-center bg-white rounded-md border-0 h-10 px-[7.5px] flex items-center justify-center`}>
+                <span className="font-bold">{viewMode === 'people' ? filteredProfiles.length : filteredProjects.length}</span><span style={{marginLeft: '0.25em'}}>{viewMode === 'people' ? 'People' : 'Projects'}</span>
               </div>
             )}
-            {layoutView === 'detail' && currentLength > 1 && (
+            {layoutView === 'detail' && (
               <div className="flex items-center">
                 <button
                   onClick={handlePrevious}
-                  disabled={!canGoPrevious}
+                  disabled={!canGoPrevious || currentLength <= 1}
                   className="page-nav-button page-nav-button-left h-[40px] w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center"
                   style={{
-                    color: !canGoPrevious ? '#d1d5db' : '#4242ea',
+                    color: (!canGoPrevious || currentLength <= 1) ? '#d1d5db' : '#4242ea',
                     backgroundColor: '#ffffff',
                     marginRight: '5px'
                   }}
@@ -1313,15 +1661,21 @@ function PersonDetailPage() {
                 >
                   <ChevronLeft className="w-[30px] h-[30px]" strokeWidth={1.5} />
                 </button>
-                <div className="text-base text-gray-700 w-28 text-center bg-white rounded-md border-0 h-10 px-[15px] flex items-center justify-center">
-                  <span className="font-bold">P. {String(currentIndex + 1).padStart(2, '0')}</span><span style={{marginLeft: 'calc(0.25em + 2px)', marginRight: '0.25em'}}>/</span>{String(currentLength).padStart(2, '0')}
+                <div className={`text-base text-gray-700 ${viewMode === 'people' ? 'w-36' : 'w-40'} text-center bg-white rounded-md border-0 h-10 px-[15px] flex items-center justify-center`}>
+                  {currentLength === 0 ? (
+                    <span>No results</span>
+                  ) : (
+                    <>
+                      <span className="font-bold">{String(currentIndex + 1).padStart(2, '0')}</span><span style={{marginLeft: 'calc(0.125em + 1px)', marginRight: '0.125em'}}>/</span>{String(Math.max(1, currentLength)).padStart(2, '0')} <span style={{marginLeft: '0.25em'}}>Pages</span>
+                    </>
+                  )}
                 </div>
                 <button
                   onClick={handleNext}
-                  disabled={!canGoNext}
+                  disabled={!canGoNext || currentLength <= 1}
                   className="page-nav-button h-[40px] w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center"
                   style={{
-                    color: !canGoNext ? '#d1d5db' : '#4242ea',
+                    color: (!canGoNext || currentLength <= 1) ? '#d1d5db' : '#4242ea',
                     backgroundColor: '#ffffff',
                     marginLeft: '5px'
                   }}
@@ -1335,37 +1689,196 @@ function PersonDetailPage() {
           
           {/* Right side: Search and View Icons */}
           <div className="flex items-center gap-3 ml-auto justify-end">
-            {layoutView === 'grid' && (
-              <div className="relative">
+            <div 
+              className="relative"
+              style={{
+                paddingTop: (searchFocused || searchCommitted || (viewMode === 'people' ? peopleFilters.search : projectFilters.search)) ? '10px' : '0',
+                paddingBottom: (searchFocused || searchCommitted || (viewMode === 'people' ? peopleFilters.search : projectFilters.search)) ? '10px' : '0',
+                marginTop: (searchFocused || searchCommitted || (viewMode === 'people' ? peopleFilters.search : projectFilters.search)) ? '-10px' : '0',
+                marginBottom: (searchFocused || searchCommitted || (viewMode === 'people' ? peopleFilters.search : projectFilters.search)) ? '-10px' : '0'
+              }}
+              onMouseEnter={() => setSearchHovered(true)}
+              onMouseLeave={() => {
+                const currentInput = viewMode === 'people' ? peopleSearchInput : projectSearchInput;
+                const currentCommitted = viewMode === 'people' ? peopleFilters.search : projectFilters.search;
+                
+                // If there's uncommitted text (user typed but didn't hit Enter), collapse
+                if (currentInput && currentInput !== currentCommitted) {
+                  setSearchHovered(false);
+                  setSearchFocused(false);
+                  if (searchInputRefDesktop.current) {
+                    searchInputRefDesktop.current.blur();
+                  }
+                  // Clear uncommitted input
+                  if (viewMode === 'people') {
+                    setPeopleSearchInput('');
+                  } else {
+                    setProjectSearchInput('');
+                  }
+                } else if (!currentCommitted) {
+                  // If no committed search and no input, collapse
+                  setSearchHovered(false);
+                  setSearchFocused(false);
+                  if (searchInputRefDesktop.current) {
+                    searchInputRefDesktop.current.blur();
+                  }
+                }
+                // If there's a committed search, don't collapse on mouse leave - keep tray open
+              }}
+            >
+              <div 
+                className="absolute top-1/2 -translate-y-1/2 pointer-events-none transition-all duration-300 ease-in-out"
+                style={{ 
+                  left: searchHovered && !searchFocused ? '10px' : '7.5px', // Center in square (40px - 25px) / 2 = 7.5px
+                  opacity: (searchFocused || searchCommitted) ? 0 : 1,
+                  zIndex: 1
+                }}
+              >
+                <Search 
+                  className="w-[25px] h-[25px]" 
+                  strokeWidth={1.5}
+                  style={{ color: '#4242ea' }}
+                />
+              </div>
+              {searchHovered && !searchFocused && (
+                <span 
+                  className="absolute pointer-events-none whitespace-nowrap text-base md:text-sm"
+                  style={{
+                    top: '50%',
+                    left: '45px', // 10px (icon left) + 25px (icon width) + 10px (gap) = 45px
+                    transform: 'translateY(-50%)',
+                    color: '#d1d5db',
+                    fontSize: '16px',
+                    zIndex: 10,
+                    opacity: 0,
+                    animation: 'fadeInText 0.1s ease-in-out 0.3s forwards',
+                    willChange: 'opacity',
+                    display: ((viewMode === 'people' ? peopleSearchInput : projectSearchInput) || (viewMode === 'people' ? peopleFilters.search : projectFilters.search) || searchCommitted) ? 'none' : 'block'
+                  }}
+                >
+                  Click to search
+                </span>
+              )}
                 <Input
-                  placeholder="Search"
-                  value={viewMode === 'people' ? peopleFilters.search : projectFilters.search}
+                ref={searchInputRefDesktop}
+                  value={searchCommitted ? (viewMode === 'people' ? peopleFilters.search : projectFilters.search) : (viewMode === 'people' ? peopleSearchInput : projectSearchInput)}
                   onChange={(e) => {
                     if (viewMode === 'people') {
-                      setPeopleFilters({ ...peopleFilters, search: e.target.value });
+                      setPeopleSearchInput(e.target.value);
                     } else {
-                      setProjectFilters({ ...projectFilters, search: e.target.value });
+                      setProjectSearchInput(e.target.value);
                     }
                   }}
-                  className="search-input w-48 xl:w-64 h-10 bg-white pr-14"
-                />
-                {(viewMode === 'people' ? peopleFilters.search : projectFilters.search) && (
-                  <button
-                    onClick={() => {
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      // Commit the search
                       if (viewMode === 'people') {
+                        setPeopleFilters({ ...peopleFilters, search: peopleSearchInput });
+                      } else {
+                        setProjectFilters({ ...projectFilters, search: projectSearchInput });
+                      }
+                      setSearchCommitted(true);
+                      // Remove focus to make it inactive (no cursor)
+                      if (searchInputRefDesktop.current) {
+                        searchInputRefDesktop.current.blur();
+                      }
+                    }
+                  }}
+                  onFocus={() => {
+                    setSearchFocused(true);
+                    // If there's a committed search, uncommit it when user clicks to search again
+                    if (searchCommitted) {
+                      setSearchCommitted(false);
+                      // Set the input to the committed search value so user can see/edit it
+                      if (viewMode === 'people') {
+                        setPeopleSearchInput(peopleFilters.search);
+                      } else {
+                        setProjectSearchInput(projectFilters.search);
+                      }
+                    }
+                  }}
+                  onBlur={(e) => {
+                    // Use setTimeout to check if focus moved to clear button
+                    setTimeout(() => {
+                      const activeElement = document.activeElement;
+                      const clickedClearButton = activeElement?.closest('button[aria-label="Clear search"]');
+                      
+                      // Don't blur if clicking on clear button
+                      if (clickedClearButton) {
+                        return; // Keep focus, don't do anything
+                      }
+                      
+                      const currentInput = viewMode === 'people' ? peopleSearchInput : projectSearchInput;
+                      const currentCommitted = viewMode === 'people' ? peopleFilters.search : projectFilters.search;
+                      
+                      // If there's uncommitted text, clear it and collapse
+                      if (currentInput && currentInput !== currentCommitted) {
+                        setSearchFocused(false);
+                        setSearchHovered(false);
+                        if (viewMode === 'people') {
+                          setPeopleSearchInput('');
+                        } else {
+                          setProjectSearchInput('');
+                        }
+                      } else if (!currentCommitted) {
+                        // If no committed search, collapse
+                        setSearchFocused(false);
+                        setSearchHovered(false);
+                      } else {
+                        // If there's a committed search, just lose focus but keep tray open
+                        setSearchFocused(false);
+                        setSearchHovered(false);
+                      }
+                    }, 150);
+                  }}
+                  className={`search-input h-10 transition-all duration-500 ease-in-out ${
+                    searchHovered || searchFocused || searchCommitted
+                      ? searchFocused && !searchCommitted
+                        ? 'bg-[#4242ea] w-48 xl:w-64 pl-[10px] pr-14' 
+                        : 'bg-white w-48 xl:w-64 pl-[10px] pr-14' 
+                      : 'bg-white w-10 pl-0 pr-0'
+                  }`}
+                  style={{
+                    color: searchFocused && !searchCommitted ? '#fff' : '#000'
+                  }}
+              />
+              {((viewMode === 'people' ? peopleSearchInput : projectSearchInput) || (viewMode === 'people' ? peopleFilters.search : projectFilters.search)) && (searchHovered || searchFocused || searchCommitted) && (
+                  <button
+                  type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      // Clear all search states and collapse the tray
+                      if (viewMode === 'people') {
+                        setPeopleSearchInput('');
                         setPeopleFilters({ ...peopleFilters, search: '' });
                       } else {
+                        setProjectSearchInput('');
                         setProjectFilters({ ...projectFilters, search: '' });
                       }
+                      setSearchCommitted(false);
+                      setSearchFocused(false);
+                      setSearchHovered(false);
+                      // Blur the input to collapse the tray
+                      setTimeout(() => {
+                        if (searchInputRefDesktop.current) {
+                          searchInputRefDesktop.current.blur();
+                        }
+                      }, 0);
                     }}
-                    className="absolute right-[10px] top-1/2 -translate-y-1/2 w-4 h-4 lg:w-5 lg:h-5 rounded-full border-[1.5px] border-white flex items-center justify-center search-clear-button transition-all"
+                className="absolute right-[10px] top-1/2 -translate-y-1/2 w-4 h-4 lg:w-5 lg:h-5 rounded-full border-[1.5px] flex items-center justify-center search-clear-button transition-all"
+                data-committed={searchCommitted ? "true" : "false"}
+                style={{
+                  borderColor: searchCommitted ? '#4242ea' : 'white',
+                  backgroundColor: 'transparent'
+                }}
                     aria-label="Clear search"
                   >
-                    <X className="w-3 h-3 lg:w-4 lg:h-4 text-white search-clear-icon" strokeWidth={2} />
+              <X className="w-3 h-3 lg:w-4 lg:h-4 search-clear-icon" strokeWidth={2} style={{ color: searchCommitted ? '#4242ea' : 'white' }} />
                   </button>
                 )}
               </div>
-            )}
             {/* View Toggle Icons */}
             <div className="view-toggle-container flex items-center gap-1 bg-white rounded-md border h-10 relative" style={{padding: 0}}>
               <div 
@@ -1472,7 +1985,11 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                     <div className="space-y-2 max-h-40 overflow-y-auto">
                       {availablePeopleFilters.skills.length > 0 ? (
                         availablePeopleFilters.skills.map(skill => (
-                        <div key={skill} className="flex items-center space-x-2">
+                        <div 
+                          key={skill} 
+                          className="flex items-center space-x-2"
+                          onMouseDown={(e) => e.preventDefault()}
+                        >
                           <Checkbox
                             id={`skill-${skill}`}
                             checked={peopleFilters.skills.includes(skill)}
@@ -1508,7 +2025,11 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                     <div className="space-y-2 max-h-40 overflow-y-auto">
                       {availablePeopleFilters.industries.length > 0 ? (
                         availablePeopleFilters.industries.map(industry => (
-                        <div key={industry} className="flex items-center space-x-2">
+                        <div 
+                          key={industry} 
+                          className="flex items-center space-x-2"
+                          onMouseDown={(e) => e.preventDefault()}
+                        >
                           <Checkbox
                             id={`industry-${industry}`}
                             checked={peopleFilters.industries.includes(industry)}
@@ -1587,7 +2108,11 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                     <h4 className="text-sm">Technologies</h4>
                     <div className="space-y-2 max-h-40 overflow-y-auto">
                       {availableProjectFilters.skills.map(skill => (
-                        <div key={skill} className="flex items-center space-x-2">
+                        <div 
+                          key={skill} 
+                          className="flex items-center space-x-2"
+                          onMouseDown={(e) => e.preventDefault()}
+                        >
                           <Checkbox 
                             id={`proj-skill-${skill}`}
                             checked={projectFilters.skills.includes(skill)}
@@ -1619,7 +2144,11 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                     <h4 className="text-sm">Industries</h4>
                     <div className="space-y-2 max-h-96 overflow-y-auto">
                       {availableProjectFilters.sectors.map(sector => (
-                        <div key={sector} className="flex items-center space-x-2">
+                        <div 
+                          key={sector} 
+                          className="flex items-center space-x-2"
+                          onMouseDown={(e) => e.preventDefault()}
+                        >
                           <Checkbox 
                             id={`proj-sector-${sector}`}
                             checked={projectFilters.sectors.includes(sector)}
@@ -1671,7 +2200,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
           {/* Grid View */}
           {layoutView === 'grid' && viewMode === 'projects' && (
             <>
-              {totalProjects === 0 ? (
+              {!gridListLoading && totalProjects === 0 ? (
                 <div className="flex flex-col items-center justify-center" style={{minHeight: 'calc(100vh - 12rem)', gap: '1rem'}}>
                   <Frown className="text-[#4242ea] error-icon" style={{width: '3rem', height: '3rem'}} strokeWidth={1.5} stroke="#4242ea" />
                   <p className="text-[#4242ea] uppercase" style={{fontFamily: "'Galano Grotesque', sans-serif", fontSize: '1.5rem', fontWeight: 400}}>
@@ -1681,6 +2210,16 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                     style={{marginTop: '1rem'}}
                     onClick={() => {
                       setProjectFilters({ search: '', skills: [], sectors: [] });
+                      setProjectSearchInput('');
+                      setSearchCommitted(false);
+                      setSearchFocused(false);
+                      setSearchHovered(false);
+                      if (searchInputRef.current) {
+                        searchInputRef.current.blur();
+                      }
+                      if (searchInputRefDesktop.current) {
+                        searchInputRefDesktop.current.blur();
+                      }
                     }}
                     className="page-nav-button h-10 px-6 rounded-full border-[1.5px] border-[#4242ea] bg-[#e3e3e3] text-[#4242ea] transition-all"
                   >
@@ -1712,32 +2251,38 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
               )}
 
             {/* Mobile Navigation - Bottom Fixed for Projects Grid */}
-            {Math.ceil(totalProjects / 8) > 1 && (
+            {(
             <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white z-50 px-4 py-3 flex items-center justify-center shadow-lg">
-                    <button
-                      onClick={() => setGridPage(Math.max(0, gridPage - 1))}
-                      disabled={gridPage === 0}
+              <button
+                onClick={() => setGridPage(Math.max(0, gridPage - 1))}
+                disabled={gridPage === 0 || Math.ceil(totalProjects / 8) <= 1}
                       className="page-nav-button page-nav-button-left h-[40px] w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center"
                       style={{
-                        color: gridPage === 0 ? '#d1d5db' : '#4242ea',
+                        color: (gridPage === 0 || Math.ceil(totalProjects / 8) <= 1) ? '#d1d5db' : '#4242ea',
                         backgroundColor: '#ffffff',
                         marginRight: '5px'
                       }}
-                      aria-label="Previous page"
-                    >
-                      <ChevronLeft className="w-[30px] h-[30px]" strokeWidth={1.5} />
+                aria-label="Previous page"
+              >
+                <ChevronLeft className="w-[30px] h-[30px]" strokeWidth={1.5} />
               </button>
               
               <div className="text-base text-gray-700 w-28 text-center bg-white rounded-md border-0 h-10 px-[15px] flex items-center justify-center">
-                <span className="font-bold">P. {String(gridPage + 1).padStart(2, '0')}</span><span style={{marginLeft: 'calc(0.25em + 2px)', marginRight: '0.25em'}}>/</span>{String(Math.ceil(totalProjects / 8)).padStart(2, '0')}
+                {totalProjects === 0 ? (
+                  <span>No results</span>
+                ) : (
+                  <>
+                    <span className="font-bold">{String(gridPage + 1).padStart(2, '0')}</span><span style={{marginLeft: 'calc(0.125em + 1px)', marginRight: '0.125em'}}>/</span>{String(Math.max(1, Math.ceil(totalProjects / 8))).padStart(2, '0')} <span style={{marginLeft: '0.25em'}}>Pages</span>
+                  </>
+                )}
               </div>
 
               <button
                 onClick={() => setGridPage(Math.min(Math.ceil(totalProjects / 8) - 1, gridPage + 1))}
-                disabled={gridPage >= Math.ceil(totalProjects / 8) - 1}
+                disabled={gridPage >= Math.ceil(totalProjects / 8) - 1 || Math.ceil(totalProjects / 8) <= 1}
                 className="page-nav-button h-[40px] w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center"
                 style={{
-                  color: gridPage >= Math.ceil(totalProjects / 8) - 1 ? '#d1d5db' : '#4242ea',
+                  color: (gridPage >= Math.ceil(totalProjects / 8) - 1 || Math.ceil(totalProjects / 8) <= 1) ? '#d1d5db' : '#4242ea',
                   backgroundColor: '#ffffff',
                   marginLeft: '5px'
                 }}
@@ -1753,7 +2298,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
           {/* People Grid View */}
           {layoutView === 'grid' && viewMode === 'people' && (
             <>
-              {totalProfiles === 0 ? (
+              {!gridListLoading && totalProfiles === 0 ? (
                 <div className="flex flex-col items-center justify-center" style={{minHeight: 'calc(100vh - 12rem)', gap: '1rem'}}>
                   <Frown className="text-[#4242ea] error-icon" style={{width: '3rem', height: '3rem'}} strokeWidth={1.5} stroke="#4242ea" />
                   <p className="text-[#4242ea] uppercase" style={{fontFamily: "'Galano Grotesque', sans-serif", fontSize: '1.5rem', fontWeight: 400}}>
@@ -1763,6 +2308,16 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                     style={{marginTop: '1rem'}}
                     onClick={() => {
                       setPeopleFilters({ search: '', skills: [], industries: [], openToWork: false });
+                      setPeopleSearchInput('');
+                      setSearchCommitted(false);
+                      setSearchFocused(false);
+                      setSearchHovered(false);
+                      if (searchInputRef.current) {
+                        searchInputRef.current.blur();
+                      }
+                      if (searchInputRefDesktop.current) {
+                        searchInputRefDesktop.current.blur();
+                      }
                     }}
                     className="page-nav-button h-10 px-6 rounded-full border-[1.5px] border-[#4242ea] bg-[#e3e3e3] text-[#4242ea] transition-all"
                   >
@@ -1794,32 +2349,38 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
               )}
 
             {/* Mobile Navigation - Bottom Fixed for People Grid */}
-            {Math.ceil(totalProfiles / 8) > 1 && (
+            {(
             <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white z-50 px-4 py-3 flex items-center justify-center shadow-lg">
-                    <button
-                      onClick={() => setGridPage(Math.max(0, gridPage - 1))}
-                      disabled={gridPage === 0}
+              <button
+                onClick={() => setGridPage(Math.max(0, gridPage - 1))}
+                disabled={gridPage === 0 || Math.ceil(totalProfiles / 8) <= 1}
                       className="page-nav-button page-nav-button-left h-[40px] w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center"
                       style={{
-                        color: gridPage === 0 ? '#d1d5db' : '#4242ea',
+                        color: (gridPage === 0 || Math.ceil(totalProfiles / 8) <= 1) ? '#d1d5db' : '#4242ea',
                         backgroundColor: '#ffffff',
                         marginRight: '5px'
                       }}
-                      aria-label="Previous page"
-                    >
-                      <ChevronLeft className="w-[30px] h-[30px]" strokeWidth={1.5} />
+                aria-label="Previous page"
+              >
+                <ChevronLeft className="w-[30px] h-[30px]" strokeWidth={1.5} />
               </button>
               
               <div className="text-base text-gray-700 w-28 text-center bg-white rounded-md border-0 h-10 px-[15px] flex items-center justify-center">
-                <span className="font-bold">P. {String(gridPage + 1).padStart(2, '0')}</span><span style={{marginLeft: 'calc(0.25em + 2px)', marginRight: '0.25em'}}>/</span>{String(Math.ceil(totalProfiles / 8)).padStart(2, '0')}
+                {totalProfiles === 0 ? (
+                  <span>No results</span>
+                ) : (
+                  <>
+                    <span className="font-bold">{String(gridPage + 1).padStart(2, '0')}</span><span style={{marginLeft: 'calc(0.125em + 1px)', marginRight: '0.125em'}}>/</span>{String(Math.max(1, Math.ceil(totalProfiles / 8))).padStart(2, '0')} <span style={{marginLeft: '0.25em'}}>Pages</span>
+                  </>
+                )}
               </div>
 
               <button
                 onClick={() => setGridPage(Math.min(Math.ceil(totalProfiles / 8) - 1, gridPage + 1))}
-                disabled={gridPage >= Math.ceil(totalProfiles / 8) - 1}
+                disabled={gridPage >= Math.ceil(totalProfiles / 8) - 1 || Math.ceil(totalProfiles / 8) <= 1}
                 className="page-nav-button h-[40px] w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center"
                 style={{
-                  color: gridPage >= Math.ceil(totalProfiles / 8) - 1 ? '#d1d5db' : '#4242ea',
+                  color: (gridPage >= Math.ceil(totalProfiles / 8) - 1 || Math.ceil(totalProfiles / 8) <= 1) ? '#d1d5db' : '#4242ea',
                   backgroundColor: '#ffffff',
                   marginLeft: '5px'
                 }}
@@ -1835,15 +2396,15 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
           {/* List View */}
           {layoutView === 'list' && (
             <>
-              {viewMode === 'projects' && filteredProjects.length === 0 ? (
+              {!gridListLoading && viewMode === 'projects' && filteredProjects.length === 0 ? (
                 <div className="flex flex-col items-center justify-center" style={{minHeight: 'calc(100vh - 12rem)', gap: '1rem'}}>
                   <Frown className="text-[#4242ea] error-icon" style={{width: '3rem', height: '3rem'}} strokeWidth={1.5} stroke="#4242ea" />
                   <p className="text-[#4242ea] uppercase" style={{fontFamily: "'Galano Grotesque', sans-serif", fontSize: '1.5rem', fontWeight: 400}}>
-                    Sorry! Can't find any projects
-                  </p>
-                  <button
+                          Sorry! Can't find any projects
+                        </p>
+                        <button
                     style={{marginTop: '1rem'}}
-                    onClick={() => {
+                          onClick={() => {
                       setProjectFilters({ search: '', skills: [], sectors: [] });
                     }}
                     className="page-nav-button h-10 px-6 rounded-full border-[1.5px] border-[#4242ea] bg-[#e3e3e3] text-[#4242ea] transition-all"
@@ -1851,7 +2412,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                     <span className="relative z-10">Clear Search</span>
                   </button>
                 </div>
-              ) : viewMode === 'people' && filteredProfiles.length === 0 ? (
+              ) : !gridListLoading && viewMode === 'people' && filteredProfiles.length === 0 ? (
                 <div className="flex flex-col items-center justify-center" style={{minHeight: 'calc(100vh - 12rem)', gap: '1rem'}}>
                   <Frown className="text-[#4242ea] error-icon" style={{width: '3rem', height: '3rem'}} strokeWidth={1.5} stroke="#4242ea" />
                   <p className="text-[#4242ea] uppercase" style={{fontFamily: "'Galano Grotesque', sans-serif", fontSize: '1.5rem', fontWeight: 400}}>
@@ -1865,9 +2426,9 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                     className="page-nav-button h-10 px-6 rounded-full border-[1.5px] border-[#4242ea] bg-[#e3e3e3] text-[#4242ea] transition-all"
                   >
                     <span className="relative z-10">Clear Search</span>
-                  </button>
-                </div>
-              ) : (
+                        </button>
+                      </div>
+                    ) : (
             <Card className="rounded-xl border-2 border-white shadow-none mb-12" style={{
               backgroundColor: 'white',
               animation: 'fadeInList 0.3s ease-in-out',
@@ -1985,6 +2546,16 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                         <button
                           onClick={() => {
                             setPeopleFilters({ ...peopleFilters, search: '' });
+                            setPeopleSearchInput('');
+                            setSearchCommitted(false);
+                            setSearchFocused(false);
+                            setSearchHovered(false);
+                            if (searchInputRef.current) {
+                              searchInputRef.current.blur();
+                            }
+                            if (searchInputRefDesktop.current) {
+                              searchInputRefDesktop.current.blur();
+                            }
                           }}
                           className="h-10 px-6 rounded-full bg-[#4242ea] text-white font-semibold hover:opacity-90 transition-opacity"
                           style={{fontFamily: "'Galano Grotesque', sans-serif"}}
@@ -2093,39 +2664,25 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
           {layoutView === 'detail' && (
             <>
           {/* Mobile Navigation - Bottom Fixed */}
-          {currentLength > 1 && (
+          {(
           <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 px-4 py-3 flex items-center justify-center shadow-lg">
-            <button
+            <PageNavButton
               onClick={handlePrevious}
-              disabled={!canGoPrevious}
-              className="page-nav-button page-nav-button-left h-[40px] w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center"
-              style={{
-                color: !canGoPrevious ? '#d1d5db' : '#4242ea',
-                backgroundColor: '#ffffff',
-                marginRight: '5px'
-              }}
-              aria-label="Previous"
-            >
-              <ChevronLeft className="w-[30px] h-[30px]" strokeWidth={1.5} />
-            </button>
-            
-            <div className="text-base text-gray-700 w-28 text-center bg-white rounded-md border-0 h-10 px-[15px] flex items-center justify-center">
-              <span className="font-bold">P. {String(currentIndex + 1).padStart(2, '0')}</span><span style={{marginLeft: 'calc(0.25em + 2px)', marginRight: '0.25em'}}>/</span>{String(currentLength).padStart(2, '0')}
-            </div>
-
-            <button
+              disabled={!canGoPrevious || currentLength <= 1}
+              direction="left"
+              ariaLabel="Previous"
+            />
+            <PageDisplay
+              current={currentIndex + 1}
+              total={currentLength}
+              viewMode={viewMode}
+            />
+            <PageNavButton
               onClick={handleNext}
-              disabled={!canGoNext}
-              className="page-nav-button h-[40px] w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center"
-              style={{
-                color: !canGoNext ? '#d1d5db' : '#4242ea',
-                backgroundColor: '#ffffff',
-                marginLeft: '5px'
-              }}
-              aria-label="Next"
-            >
-              <ChevronRight className="w-[30px] h-[30px]" strokeWidth={1.5} />
-            </button>
+              disabled={!canGoNext || currentLength <= 1}
+              direction="right"
+              ariaLabel="Next"
+            />
           </div>
           )}
 
@@ -2235,11 +2792,11 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                   )}
 
                   {/* Select Projects - Before Experience Section */}
-                  {person.projects && person.projects.length > 0 && (
+                  {person?.projects && Array.isArray(person.projects) && person.projects.length > 0 && (
                     <div className="mb-4 pb-4 border-b">
                       <div className="flex items-center justify-between mb-1">
                         <h3 className="text-lg font-bold">Select Projects</h3>
-                        {filteredPersonProjects.length > 3 && (
+                        {filteredPersonProjects && filteredPersonProjects.length > 3 && (
                           <div className="flex gap-2">
                             <button
                               onClick={() => setProjectCarouselIndex(Math.max(0, projectCarouselIndex - 3))}
@@ -2261,7 +2818,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                           </div>
                         )}
                       </div>
-                      {filteredPersonProjects.length === 0 ? (
+                      {!filteredPersonProjects || filteredPersonProjects.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-8" style={{gap: '1rem'}}>
                           <Frown className="text-[#4242ea] error-icon" style={{width: '3rem', height: '3rem'}} strokeWidth={1.5} stroke="#4242ea" />
                           <p className="text-[#4242ea] uppercase" style={{fontFamily: "'Galano Grotesque', sans-serif", fontSize: '1.5rem', fontWeight: 400}}>
@@ -2278,23 +2835,15 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                           </button>
                         </div>
                       ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-3">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-3">
                           {filteredPersonProjects.slice(projectCarouselIndex, projectCarouselIndex + 3).map((project, idx) => {
                           // Cycle through different icons for variety (fallback if no image)
                           const icons = [Camera, Code, Rocket, Zap, Lightbulb, Target];
                           const Icon = icons[(projectCarouselIndex + idx) % icons.length];
                           
-                          // Debug: Log what we have
-                          console.log('Project:', project.title);
-                          console.log('mainImageUrl:', project.mainImageUrl);
-                          console.log('main_image_url:', project.main_image_url);
-                          
                           // Check if project has main_image_url (prioritize this) or icon_url
                           const hasProjectImage = project.mainImageUrl || project.main_image_url || project.icon_url;
                           const imageUrl = project.mainImageUrl || project.main_image_url || project.icon_url;
-                          
-                          console.log('Using imageUrl:', imageUrl);
-                          console.log('hasProjectImage:', hasProjectImage);
                           
                           return (
                             <div key={idx} className="flex gap-3 items-start">
@@ -2316,7 +2865,6 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                                     alt={project.title}
                                     className="w-full h-full object-cover"
                                     onError={(e) => {
-                                      console.log('Image failed to load for:', project.title);
                                       e.target.style.display = 'none';
                                     }}
                                   />
