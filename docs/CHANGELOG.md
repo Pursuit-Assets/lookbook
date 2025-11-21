@@ -2,6 +2,17 @@
 
 ## 2025-11-21 - Page Navigation & Profile Updates
 
+### Search Bar
+- Changed search behavior to commit on Enter key press
+- Added visual states: purple background when active, white when committed
+- Hide magnifying glass icon when search is focused or committed
+- Clear button styling: purple border/icon when search is committed, purple fill/white icon on hover
+- Added "Click to search" animated text that fades in after tray opens
+- Search tray stays open when search is committed (even when clicking elsewhere)
+- Clicking into committed search retains the search value
+- Tray opening animation set to 500ms
+- Fixed tray collapse behavior when clearing search with no results
+
 ### Page Navigation
 - Changed format from "P. xx/xx" to "xx/xx Pages"
 - Reduced spacing around "/" separator by half
