@@ -2692,12 +2692,12 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
             marginBottom: 'calc(3rem + 70px)', // Extra space for mobile nav on mobile
             animation: 'fadeIn 0.3s ease-in-out',
           }}>
-            <CardContent className="p-4 md:p-6">
+            <CardContent className="p-4 md:p-[30px]">
               {/* Render Person or Project based on viewMode */}
               {viewMode === 'people' && person && (
               <>
               {/* Header with Photo and Name */}
-              <div className="flex flex-col md:flex-row items-start gap-6 mb-6">
+              <div className="flex flex-col md:flex-row gap-6 mb-6 items-start">
                 {/* Profile Photo Card and Highlights */}
                 <div className="flex-shrink-0 w-full md:w-60">
                   <div className="rounded-lg overflow-hidden mb-4" style={{height: '270px'}}>
@@ -2735,17 +2735,17 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                 </div>
                 
                 {/* Name and Info */}
-                <div className="flex-1 w-full md:w-auto pt-0 md:pt-4">
+                <div className="flex-1 w-full md:w-auto">
                   <div className="flex flex-col sm:flex-row sm:items-start justify-between mb-4">
                     <div>
                       <div className="flex flex-col sm:flex-row sm:items-baseline gap-2 sm:gap-3">
-                        <h1 className="font-bold uppercase tracking-tight text-2xl md:text-3xl" style={{fontFamily: "'Galano Grotesque', sans-serif"}}>{person.name}</h1>
+                        <h1 className="font-bold uppercase tracking-tight text-2xl md:text-3xl" style={{fontFamily: "'Galano Grotesque', sans-serif", margin: 0, lineHeight: '1.1'}}>{person.name}</h1>
                         {person.title && (
                           <p className="text-base md:text-lg text-gray-600">{person.title}</p>
                         )}
                       </div>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 items-start">
                       {person.linkedin_url && (
                         <a href={person.linkedin_url} target="_blank" rel="noopener noreferrer">
                           <Button size="icon" style={{ backgroundColor: '#0A66C2', color: 'white' }} className="hover:opacity-90">
