@@ -3,9 +3,6 @@
 ## 2025-11-21 - Page Navigation & Profile Updates
 
 ### Commits
-- `a6b9bc7` - Add search bar changes to changelog ⏳
-- `da632e9` - Add changelog documenting recent changes ⏳
-- `ac358e6` - Restructure changelog to track changes per commit with push status ⏳
 - `6124052` - Update profile page alignment and desktop padding ⏳
 - `d97cff2` - Update page navigation format and styling ✅
 
