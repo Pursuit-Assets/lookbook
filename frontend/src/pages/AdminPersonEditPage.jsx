@@ -162,17 +162,63 @@ function AdminPersonEditPage() {
     e.preventDefault();
     setSaving(true);
     
+    // Validation
+    if (!formData.slug || formData.slug.trim() === '') {
+      toast.error('Slug is required', {
+        description: 'Please enter a URL slug for this profile'
+      });
+      setSaving(false);
+      return;
+    }
+    
+    // Validate slug format (alphanumeric, hyphens, underscores only)
+    const slugRegex = /^[a-z0-9-_]+$/;
+    if (!slugRegex.test(formData.slug.trim())) {
+      toast.error('Invalid slug format', {
+        description: 'Slug can only contain lowercase letters, numbers, hyphens, and underscores'
+      });
+      setSaving(false);
+      return;
+    }
+    
+    if (!formData.name || formData.name.trim() === '') {
+      toast.error('Name is required', {
+        description: 'Please enter a name for this profile'
+      });
+      setSaving(false);
+      return;
+    }
+    
     const slugChanged = !isNew && formData.slug !== slug;
     
     try {
       if (isNew) {
-        await profilesAPI.create(formData);
-        toast.success('Person created successfully!', {
-          description: `${formData.name} has been added to the lookbook.`
-        });
+        // Normalize slug (trim and lowercase)
+        const normalizedFormData = {
+          ...formData,
+          slug: formData.slug.trim().toLowerCase()
+        };
+        const response = await profilesAPI.create(normalizedFormData);
+        
+        // Check if there's a warning about name update
+        if (response?.warning) {
+          toast.warning('Profile created with limitations', {
+            description: response.warning
+          });
+        } else {
+          toast.success('Person created successfully!', {
+            description: `${formData.name} has been added to the lookbook.`
+          });
+        }
       } else {
-        await profilesAPI.update(slug, formData);
-        if (slugChanged) {
+        const response = await profilesAPI.update(slug, formData);
+        
+        // Check if there's a warning about name update
+        if (response?.warning) {
+          toast.warning('Profile updated with limitations', {
+            description: response.warning
+          });
+        } else if (slugChanged) {
           toast.success('Person updated successfully!', {
             description: `Slug changed to ${formData.slug}. URL updated.`
           });
@@ -186,11 +232,31 @@ function AdminPersonEditPage() {
       // Clear the frontend cache to ensure fresh data is fetched
       apiCache.clear();
       
-      navigate('/admin/people');
+      navigate('/admin/people', { 
+        state: { refresh: true, timestamp: Date.now() },
+        replace: false
+      });
     } catch (error) {
       console.error('Error saving person:', error);
+      
+      // Log the full error response for debugging
+      if (error.response?.data) {
+        console.error('Backend error response:', JSON.stringify(error.response.data, null, 2));
+      }
+      
+      // Try multiple ways to extract the error message
+      const errorMessage = 
+        error.response?.data?.error || 
+        error.response?.data?.message || 
+        error.responseData?.error ||
+        error.responseData?.message ||
+        error.message || 
+        'An error occurred. Please try again.';
+      
+      console.error('Error message that will be shown:', errorMessage);
+      
       toast.error('Failed to save person', {
-        description: error.message || 'An error occurred. Please try again.'
+        description: errorMessage
       });
     } finally {
       setSaving(false);

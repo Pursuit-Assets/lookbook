@@ -151,11 +151,27 @@ router.post('/', async (req, res) => {
   } catch (error) {
     console.error('Error creating project:', error);
     
-    // Handle duplicate slug error
+    // Handle duplicate constraint errors
     if (error.code === '23505') {
+      const errorMessage = error.message || '';
+      if (errorMessage.includes('slug') || errorMessage.includes('lookbook_projects_slug_key')) {
+        return res.status(409).json({
+          success: false,
+          error: 'Project with this slug already exists'
+        });
+      }
       return res.status(409).json({
         success: false,
-        error: 'Project with this slug already exists'
+        error: 'A project with this information already exists'
+      });
+    }
+    
+    // Handle not null constraint errors
+    if (error.code === '23502') {
+      const column = error.column || 'unknown field';
+      return res.status(400).json({
+        success: false,
+        error: `Missing required field: ${column}`
       });
     }
     

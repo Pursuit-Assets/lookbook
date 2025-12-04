@@ -68,16 +68,20 @@ const PageNavButton = ({ onClick, disabled, direction = 'left', ariaLabel }) => 
 };
 
 // Reusable Page Display Component
-const PageDisplay = ({ current, total, viewMode, isList = false, totalCount = null }) => {
+const PageDisplay = ({ current, total, viewMode, isList = false, totalCount = null, isDetail = false, hasContent = false }) => {
   const width = isList 
     ? (viewMode === 'people' ? 'w-36' : 'w-40')
     : (viewMode === 'people' ? 'w-36' : 'w-40');
   const padding = isList ? 'px-[7.5px]' : 'px-[15px]';
   
-  if (total === 0) {
+  // When total is 0, show "0 Pages" or "0 People"/"0 Projects" with 0 in bold
+  if (total === 0 && !hasContent) {
+    const label = isDetail 
+      ? (viewMode === 'people' ? 'People' : 'Projects')
+      : 'Pages';
     return (
       <div className={`text-base text-gray-700 ${width} text-center bg-white rounded-md border-0 h-10 ${padding} flex items-center justify-center`}>
-        <span>No results</span>
+        <span className="font-bold">0</span> <span style={{marginLeft: '0.25em'}}>{label}</span>
       </div>
     );
   }
@@ -90,9 +94,14 @@ const PageDisplay = ({ current, total, viewMode, isList = false, totalCount = nu
     );
   }
   
+  // In detail view, show "People" or "Projects" instead of "Pages"
+  const label = isDetail 
+    ? (viewMode === 'people' ? 'People' : 'Projects')
+    : 'Pages';
+  
   return (
     <div className={`text-base text-gray-700 ${width} text-center bg-white rounded-md border-0 h-10 ${padding} flex items-center justify-center`}>
-      <span className="font-bold">{String(current).padStart(2, '0')}</span><span style={{marginLeft: 'calc(0.125em + 1px)', marginRight: '0.125em'}}>/</span>{String(Math.max(1, total)).padStart(2, '0')} <span style={{marginLeft: '0.25em'}}>Pages</span>
+      <span className="font-bold">{String(current).padStart(2, '0')}</span><span style={{marginLeft: 'calc(0.125em + 1px)', marginRight: '0.125em'}}>/</span>{String(Math.max(1, total)).padStart(2, '0')} <span style={{marginLeft: '0.25em'}}>{label}</span>
     </div>
   );
 };
@@ -580,16 +589,56 @@ function PersonDetailPage() {
   const [totalProjects, setTotalProjects] = useState(0); // Total count from server
   const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For project carousel
   
+  // Track previous pathname to detect navigation away/back
+  const prevPathnameRef = useRef(location.pathname);
+  const isInitialMountRef = useRef(true);
+  
   // Detect viewMode from URL - run this first
   useEffect(() => {
     const newViewMode = location.pathname.startsWith('/projects') ? 'projects' : 'people';
+    const wasPeople = viewMode === 'people';
+    const isPeople = newViewMode === 'people';
+    const isPeopleOrProjectsRoute = location.pathname.startsWith('/people') || location.pathname.startsWith('/projects');
+    const wasInPeopleOrProjectsBefore = prevPathnameRef.current && (prevPathnameRef.current.startsWith('/people') || prevPathnameRef.current.startsWith('/projects'));
+    
     setViewMode(newViewMode);
     setFilterView(newViewMode);
-    // Reset error when switching modes
-    setError(null);
-    setPerson(null);
-    setProject(null);
-  }, [location.pathname]);
+    
+    // Clear filters when switching between people and projects
+    if (wasPeople !== isPeople) {
+      // Switching between people and projects - reset everything including filters
+      setError(null);
+      setPerson(null);
+      setProject(null);
+      setPeopleFilters({ search: '', skills: [], industries: [], openToWork: false });
+      setPeopleSearchInput('');
+      setProjectFilters({ search: '', skills: [], sectors: [] });
+      setProjectSearchInput('');
+      setSearchCommitted(false);
+      setSearchFocused(false);
+      setSearchHovered(false);
+    }
+    
+    // Clear filters when navigating back to people/projects from another section
+    // Skip on initial mount to avoid clearing filters on first load
+    if (!isInitialMountRef.current && !wasInPeopleOrProjectsBefore && isPeopleOrProjectsRoute) {
+      // Coming back to people/projects section - clear filters
+      if (isPeople) {
+        setPeopleFilters({ search: '', skills: [], industries: [], openToWork: false });
+        setPeopleSearchInput('');
+      } else {
+        setProjectFilters({ search: '', skills: [], sectors: [] });
+        setProjectSearchInput('');
+      }
+      setSearchCommitted(false);
+      setSearchFocused(false);
+      setSearchHovered(false);
+    }
+    
+    // Update refs after processing
+    prevPathnameRef.current = location.pathname;
+    isInitialMountRef.current = false;
+  }, [location.pathname, viewMode]);
   
   // Sidebar state
   const [filterView, setFilterView] = useState(initialViewMode);
@@ -693,66 +742,18 @@ function PersonDetailPage() {
     return true;
   }), [allProjects, debouncedProjectSearch, projectFilters.skills, projectFilters.sectors]);
 
-  // Filter person's projects based on project filters (for detail view)
+  // Filter person's projects - always show all projects for that person
+  // Filters don't affect the "Select Projects" section on person detail pages
   const filteredPersonProjects = useMemo(() => {
     if (!person?.projects) {
       return [];
     }
     
-    // Handle case where projects might be null or not an array
+    // Always return all projects for the person, regardless of filters
+    // The "Select Projects" section should always show all projects
     const projectsArray = Array.isArray(person.projects) ? person.projects : [];
-    
-    // If no filters are applied, return all projects
-    const hasSearch = debouncedProjectSearch && debouncedProjectSearch.trim().length > 0;
-    const hasSkillsFilter = projectFilters.skills.length > 0;
-    const hasSectorsFilter = projectFilters.sectors.length > 0;
-    
-    if (!hasSearch && !hasSkillsFilter && !hasSectorsFilter) {
-      return projectsArray;
-    }
-    
-    const filtered = projectsArray.filter(project => {
-      // Search filter (using debounced value)
-      if (hasSearch) {
-        const searchLower = debouncedProjectSearch.toLowerCase();
-        const matchesTitle = project.title?.toLowerCase().includes(searchLower);
-        const matchesSummary = project.summary?.toLowerCase().includes(searchLower);
-        const matchesDescription = project.short_description?.toLowerCase().includes(searchLower);
-        const matchesSkills = Array.isArray(project.skills) && project.skills.some(skill => 
-          typeof skill === 'string' && skill.toLowerCase().includes(searchLower)
-        );
-        if (!matchesTitle && !matchesSummary && !matchesDescription && !matchesSkills) {
-          return false;
-        }
-      }
-      
-      // Skills filter
-      if (hasSkillsFilter) {
-        if (!Array.isArray(project.skills) || project.skills.length === 0) {
-          return false;
-        }
-        const hasSkill = projectFilters.skills.some(filterSkill => 
-          project.skills.includes(filterSkill)
-        );
-        if (!hasSkill) return false;
-      }
-      
-      // Sectors filter
-      if (hasSectorsFilter) {
-        if (!Array.isArray(project.sectors) || project.sectors.length === 0) {
-          return false;
-        }
-        const hasSector = projectFilters.sectors.some(filterSector => 
-          project.sectors.includes(filterSector)
-        );
-        if (!hasSector) return false;
-      }
-      
-      return true;
-    });
-    
-    return filtered;
-  }, [person?.projects, debouncedProjectSearch, projectFilters.skills, projectFilters.sectors]);
+    return projectsArray;
+  }, [person?.projects]);
 
   // Reset to first page when filters or search changes
   useEffect(() => {
@@ -966,25 +967,54 @@ function PersonDetailPage() {
     
     // If there's a slug, show detail view
     setLayoutView('detail');
-    setLoading(true);
     
-    // Clear project filters when entering detail view to show all projects
+    // Check if we already have this person/project loaded
+    // This prevents full page refresh when transitioning from grid to detail
+    const hasExactData = (viewMode === 'people' && person?.slug === slug) || 
+                        (viewMode === 'projects' && project?.slug === slug);
+    
+    // Also check if the data is in our lists (from grid view)
+    const hasDataInList = (viewMode === 'people' && allProfiles.some(p => p.slug === slug)) ||
+                          (viewMode === 'projects' && allProjects.some(p => p.slug === slug));
+    
+    // Only show loading screen if we don't have any data at all
+    // If we have data in the list, we'll fetch full detail in background without showing loading
+    // This makes the transition smooth like grid->list
+    if (!hasExactData && !hasDataInList) {
+    setLoading(true);
+    } else {
+      // We have some data, don't show loading screen - smooth transition like grid->list
+      setLoading(false);
+    }
+    
+    // On person detail view, filters should affect people (for navigation), not projects
+    // The "Select Projects" section always shows all projects for that person
     if (viewMode === 'people') {
-      setProjectFilters({ search: '', skills: [], sectors: [] });
+      setFilterView('people'); // Show people filters on person detail page
+      // Don't clear project filters here - they're not used on person detail pages
     }
     
     if (viewMode === 'people') {
       const fetchPersonAndList = async () => {
+        // Don't skip fetch when filters change - we need to refetch filtered list
+        // Only skip if we have the exact person AND the list hasn't changed
+        
         startLoading();
         setLoadingProgress(10);
         try {
           setLoadingProgress(30);
           // Fetch both in parallel
-          // In detail view, ALWAYS fetch full unfiltered list for navigation
-          // This ensures we have the complete list regardless of previous filters
-          const [personDataResult, allDataResult] = await Promise.allSettled([
+          // In detail view, fetch filtered data from API (like grid/list) for navigation
+          // This uses server-side filtering and avoids client-side filtering conflicts
+          const [personDataResult, listDataResult] = await Promise.allSettled([
             profilesAPI.getBySlug(slug),
-            profilesAPI.getAll({ limit: 100 }) // Always fetch full unfiltered list
+            profilesAPI.getAll({
+              limit: 100,
+              search: debouncedPeopleSearch || undefined,
+              skills: peopleFilters.skills.length > 0 ? peopleFilters.skills : undefined,
+              industries: peopleFilters.industries.length > 0 ? peopleFilters.industries : undefined,
+              openToWork: peopleFilters.openToWork ? true : undefined
+            })
           ]);
           
           // Extract results, handling both success and error cases
@@ -992,36 +1022,71 @@ function PersonDetailPage() {
             ? personDataResult.value 
             : (personDataResult.reason?.response?.data || { success: false, error: 'Person not found' });
           
-          const allData = allDataResult.status === 'fulfilled'
-            ? allDataResult.value
+          const listData = listDataResult.status === 'fulfilled'
+            ? listDataResult.value
             : { success: false };
           
           setLoadingProgress(70);
+          
+          // Update allProfiles with filtered/unfiltered list from API (single source of truth)
+          if (listData && listData.success) {
+            setAllProfiles(listData.data);
+            setTotalProfiles(listData.data.length);
+          }
+          
+          const profiles = listData && listData.success ? listData.data : allProfiles;
+          
           if (personData && personData.success) {
-            setPerson(personData.data);
+            const person = personData.data;
+            
+            // Check if current person is in the fetched list
+            const currentPersonInList = profiles.some(p => p.slug === slug);
+            
+            if (currentPersonInList) {
+              // Person is in the list, set it and update index
+              setPerson(person);
             setProject(null);
             
             // Track person view
             analytics.personViewed(
-              personData.data.slug,
-              `${personData.data.first_name} ${personData.data.last_name}`,
-              personData.data.skills || []
-            );
-            
-            // Always update allProfiles with full unfiltered list for navigation
-            if (allData && allData.success) {
-              setAllProfiles(allData.data);
-              setTotalProfiles(allData.data.length);
-            }
-            
-            // Find current index in the full list
-            const profiles = allData && allData.success ? allData.data : allProfiles;
+                person.slug,
+                `${person.first_name} ${person.last_name}`,
+                person.skills || []
+              );
+              
+              // Find current index in the list
             const index = profiles.findIndex(p => p.slug === slug);
-            setCurrentIndex(index >= 0 ? index : -1);
+              setCurrentIndex(index >= 0 ? index : -1);
             setError(null);
+            } else if (profiles.length > 0) {
+              // Person not in list but list has items - navigate to first in list
+              // This will trigger a re-fetch with the new slug
+              setPerson(null);
+              setProject(null);
+              setCurrentIndex(-1);
+              setError(null);
+              navigate(`/people/${profiles[0].slug}`);
+              return; // Don't set error, navigation will handle it
           } else {
-            const errorMessage = personData?.error || 'Person not found';
-            setError(errorMessage);
+              // No results - clear person to show "no results" message
+              setPerson(null);
+              setProject(null);
+              setCurrentIndex(-1);
+              setError(null); // Clear error so "no results" message shows instead of "Not found"
+            }
+          } else {
+            // Person fetch failed - check if it's because of filters or actual error
+            if (profiles.length === 0) {
+              // No results from filters - show "no results" message
+              setPerson(null);
+              setProject(null);
+              setCurrentIndex(-1);
+              setError(null);
+            } else {
+              // Actual error - person doesn't exist
+              const errorMessage = personData?.error || 'Person not found';
+              setError(errorMessage);
+            }
           }
           setLoadingProgress(100);
           completeLoading();
@@ -1038,44 +1103,92 @@ function PersonDetailPage() {
       fetchPersonAndList();
     } else if (viewMode === 'projects') {
       const fetchProjectAndList = async () => {
+        // Don't skip fetch when filters change - we need to refetch filtered list
+        // If we have basic data in the list, don't show loading screen
+        // but still fetch full detail in background
+        const hasBasicData = allProjects.some(p => p.slug === slug);
+        if (hasBasicData) {
+          setLoading(false); // Don't show loading screen
+        }
+        
         startLoading();
         setLoadingProgress(10);
         try {
           setLoadingProgress(30);
           // Fetch both in parallel
-          // In detail view, ALWAYS fetch full unfiltered list for navigation
-          // This ensures we have the complete list regardless of previous filters
-          const [projectData, allData] = await Promise.all([
+          // In detail view, fetch filtered data from API (like grid/list) for navigation
+          // This uses server-side filtering and avoids client-side filtering conflicts
+          const [projectData, listData] = await Promise.all([
             projectsAPI.getBySlug(slug),
-            projectsAPI.getAll({ limit: 100 }) // Always fetch full unfiltered list
+            projectsAPI.getAll({
+              limit: 100,
+              search: debouncedProjectSearch || undefined,
+              skills: projectFilters.skills.length > 0 ? projectFilters.skills : undefined,
+              sectors: projectFilters.sectors.length > 0 ? projectFilters.sectors : undefined
+            })
           ]);
           
           setLoadingProgress(70);
+          
+          // Update allProjects with filtered/unfiltered list from API (single source of truth)
+          if (listData.success) {
+            setAllProjects(listData.data);
+            setTotalProjects(listData.data.length);
+          }
+          
+          const projects = listData.success ? listData.data : allProjects;
+          
           if (projectData.success) {
-            setProject(projectData.data);
+            const project = projectData.data;
+            
+            // Check if current project is in the fetched list
+            const currentProjectInList = projects.some(p => p.slug === slug);
+            
+            if (currentProjectInList) {
+              // Project is in the list, set it and update index
+              setProject(project);
             setPerson(null);
             
             // Track project view
             analytics.projectViewed(
-              projectData.data.slug,
-              projectData.data.title,
-              projectData.data.skills || [],
-              projectData.data.sectors || []
-            );
-            
-            // Always update allProjects with full unfiltered list for navigation
-            if (allData.success) {
-              setAllProjects(allData.data);
-              setTotalProjects(allData.data.length);
-            }
-            
-            // Find current index in the full list
-            const projects = allData.success ? allData.data : allProjects;
+                project.slug,
+                project.title,
+                project.skills || [],
+                project.sectors || []
+              );
+              
+              // Find current index in the list
             const index = projects.findIndex(p => p.slug === slug);
-            setCurrentIndex(index >= 0 ? index : -1);
+              setCurrentIndex(index >= 0 ? index : -1);
             setError(null);
+            } else if (projects.length > 0) {
+              // Project not in list but list has items - navigate to first in list
+              // This will trigger a re-fetch with the new slug
+              setProject(null);
+              setPerson(null);
+              setCurrentIndex(-1);
+              setError(null);
+              navigate(`/projects/${projects[0].slug}`);
+              return; // Don't set error, navigation will handle it
           } else {
+              // No results - clear project to show "no results" message
+              setProject(null);
+              setPerson(null);
+              setCurrentIndex(-1);
+              setError(null); // Clear error so "no results" message shows instead of "Not found"
+            }
+          } else {
+            // Project fetch failed - check if it's because of filters or actual error
+            if (projects.length === 0) {
+              // No results from filters - show "no results" message
+              setProject(null);
+              setPerson(null);
+              setCurrentIndex(-1);
+              setError(null);
+            } else {
+              // Actual error - project doesn't exist
             setError('Project not found');
+          }
           }
           setLoadingProgress(100);
           completeLoading();
@@ -1092,28 +1205,39 @@ function PersonDetailPage() {
     } else {
       setLoading(false);
     }
-  }, [slug, viewMode]);
+  }, [slug, viewMode, debouncedPeopleSearch, debouncedProjectSearch, peopleFilters.skills, peopleFilters.industries, peopleFilters.openToWork, projectFilters.skills, projectFilters.sectors]);
 
-  // Update currentIndex when allProfiles or allProjects array loads
-  // Only update if we're in detail view and the current item is found in the list
-  // This prevents navigation issues when filters are applied
+  // Update currentIndex when slug or list changes
+  // Since allProfiles/allProjects are now filtered from API, we just need to find the index
   useEffect(() => {
     if (layoutView === 'detail' && slug) {
-    if (viewMode === 'people' && person && allProfiles.length > 0) {
-      const index = allProfiles.findIndex(p => p.slug === person.slug);
-        // Only update if found (index >= 0), otherwise keep current index
-        // This prevents switching to a different person when filters exclude the current one
+      if (viewMode === 'people' && person) {
+        const index = allProfiles.findIndex(p => p.slug === slug);
         if (index >= 0) {
       setCurrentIndex(index);
+        } else if (allProfiles.length > 0) {
+          // Person not in current list, navigate to first in list
+          // This will trigger a re-fetch with the new slug
+          navigate(`/people/${allProfiles[0].slug}`);
+        } else {
+          // No results
+          setCurrentIndex(-1);
         }
-    } else if (viewMode === 'projects' && project && allProjects.length > 0) {
-      const index = allProjects.findIndex(p => p.slug === project.slug);
+      } else if (viewMode === 'projects' && project) {
+        const index = allProjects.findIndex(p => p.slug === slug);
         if (index >= 0) {
       setCurrentIndex(index);
-    }
+        } else if (allProjects.length > 0) {
+          // Project not in current list, navigate to first in list
+          // This will trigger a re-fetch with the new slug
+          navigate(`/projects/${allProjects[0].slug}`);
+        } else {
+          // No results
+          setCurrentIndex(-1);
+        }
       }
     }
-  }, [allProfiles, allProjects, person, project, viewMode, layoutView, slug]);
+  }, [slug, allProfiles, allProjects, person, project, viewMode, layoutView, navigate]);
 
   // Hide scrollbar on body/html only when in 4x2 grid view (4 columns, exactly 8 items)
   useLayoutEffect(() => {
@@ -1202,12 +1326,16 @@ function PersonDetailPage() {
     if (currentIndex > 0) {
       if (viewMode === 'people') {
         const prevProfile = allProfiles[currentIndex - 1];
+        if (prevProfile) {
         analytics.navigation('previous', person?.slug, prevProfile.slug);
         navigate(`/people/${prevProfile.slug}`);
+        }
       } else {
         const prevProject = allProjects[currentIndex - 1];
+        if (prevProject) {
         analytics.navigation('previous', project?.slug, prevProject.slug);
         navigate(`/projects/${prevProject.slug}`);
+        }
       }
     }
   };
@@ -1217,22 +1345,38 @@ function PersonDetailPage() {
     if (currentIndex < maxLength - 1) {
       if (viewMode === 'people') {
         const nextProfile = allProfiles[currentIndex + 1];
+        if (nextProfile) {
         analytics.navigation('next', person?.slug, nextProfile.slug);
         navigate(`/people/${nextProfile.slug}`);
+        }
       } else {
         const nextProject = allProjects[currentIndex + 1];
+        if (nextProject) {
         analytics.navigation('next', project?.slug, nextProject.slug);
         navigate(`/projects/${nextProject.slug}`);
+        }
       }
     }
   };
 
   const handleTabSwitch = (tab) => {
+    // Always navigate to the new view (grid/list) when switching tabs
+    // This ensures clicking "PROJECTS" shows the projects grid view
     setFilterView(tab);
     setViewMode(tab);
     setCurrentIndex(-1);
     setGridPage(0); // Reset grid page when switching between people and projects
     setMobileMenuOpen(false); // Close mobile menu when switching tabs
+    
+    // Clear filters when switching tabs
+    setPeopleFilters({ search: '', skills: [], industries: [], openToWork: false });
+    setPeopleSearchInput('');
+    setProjectFilters({ search: '', skills: [], sectors: [] });
+    setProjectSearchInput('');
+    setSearchCommitted(false);
+    setSearchFocused(false);
+    setSearchHovered(false);
+    
     // Navigate to base route (grid view will be set by useEffect if no slug)
     if (tab === 'people') {
       navigate('/people');
@@ -1274,16 +1418,27 @@ function PersonDetailPage() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [currentIndex, viewMode, allProfiles, allProjects, layoutView, gridPage]);
+  }, [currentIndex, viewMode, filteredProfiles, allProjects, layoutView, gridPage]);
 
   const canGoPrevious = currentIndex > 0;
+  // Use allProfiles/allProjects directly - they are already filtered when filters are active (from API)
   const currentLength = viewMode === 'people' ? allProfiles.length : allProjects.length;
+  // Next button should be active if we're not on the last item
   const canGoNext = currentIndex >= 0 && currentIndex < currentLength - 1;
 
-  if (loading) return <div className="min-h-screen" style={{backgroundColor: '#e3e3e3'}}></div>;
+  // Only show loading screen if we're actually loading and don't have data yet
+  // This prevents full page refresh when transitioning from grid to detail
+  const isActuallyLoading = loading && !((viewMode === 'people' && person) || (viewMode === 'projects' && project));
+  if (isActuallyLoading && slug) return <div className="min-h-screen" style={{backgroundColor: '#e3e3e3'}}></div>;
   // Only show error if we're done loading and viewMode has been set
   if (error && slug && !loading && viewMode) return <div className="flex items-center justify-center min-h-screen text-red-500" style={{backgroundColor: '#e3e3e3'}}>{error}</div>;
-  if (!person && !project && slug && layoutView === 'detail') return <div className="flex items-center justify-center min-h-screen" style={{backgroundColor: '#e3e3e3'}}>Not found</div>;
+  // Show "Not found" only if we have an error AND it's not a "no results" scenario
+  // If filters result in no results, show the "no results" message in the content area instead
+  if (!person && !project && slug && layoutView === 'detail' && !loading && error && 
+      !(viewMode === 'people' && allProfiles.length === 0) && 
+      !(viewMode === 'projects' && allProjects.length === 0)) {
+    return <div className="flex items-center justify-center min-h-screen" style={{backgroundColor: '#e3e3e3'}}>Not found</div>;
+  }
 
   const initials = person?.name?.split(' ').map(n => n.charAt(0)).join('') || project?.title?.charAt(0) || '?';
 
@@ -1530,13 +1685,25 @@ function PersonDetailPage() {
             data-active={layoutView === 'detail'}
             onClick={() => {
               if (!slug) {
-                if (viewMode === 'people' && filteredProfiles.length > 0) {
-                  navigate(`/people/${filteredProfiles[0].slug}`);
-                } else if (viewMode === 'projects' && filteredProjects.length > 0) {
-                  navigate(`/projects/${filteredProjects[0].slug}`);
+                // If no slug (grid view), navigate to first item
+                // Use allProfiles/allProjects (which are filtered when filters are active)
+                if (viewMode === 'people') {
+                  if (allProfiles.length > 0) {
+                    navigate(`/people/${allProfiles[0].slug}`);
+                  }
+                } else if (viewMode === 'projects') {
+                  if (allProjects.length > 0) {
+                    navigate(`/projects/${allProjects[0].slug}`);
+                  }
                 }
-              } else {
+                // Always set layout view to detail when clicking detail button
                 setLayoutView('detail');
+              } else {
+                // If we have a slug, we're already in detail view, so do nothing
+                // But ensure layoutView is set to detail
+                if (layoutView !== 'detail') {
+                setLayoutView('detail');
+                }
               }
             }}
           >
@@ -1578,7 +1745,9 @@ function PersonDetailPage() {
                     </button>
                     <div className="text-base text-gray-700 w-40 text-center bg-white rounded-md border-0 h-10 px-[15px] flex items-center justify-center">
                       {totalProjects === 0 ? (
-                        <span>No results</span>
+                        <>
+                          <span className="font-bold">0</span> <span style={{marginLeft: '0.25em'}}>Pages</span>
+                        </>
                       ) : (
                         <>
                           <span className="font-bold">{String(gridPage + 1).padStart(2, '0')}</span><span style={{marginLeft: 'calc(0.125em + 1px)', marginRight: '0.125em'}}>/</span>{String(Math.max(1, Math.ceil(totalProjects / 8))).padStart(2, '0')} <span style={{marginLeft: '0.25em'}}>Pages</span>
@@ -1617,7 +1786,9 @@ function PersonDetailPage() {
                     </button>
                     <div className="text-base text-gray-700 w-36 text-center bg-white rounded-md border-0 h-10 px-[15px] flex items-center justify-center">
                       {totalProfiles === 0 ? (
-                        <span>No results</span>
+                        <>
+                          <span className="font-bold">0</span> <span style={{marginLeft: '0.25em'}}>Pages</span>
+                        </>
                       ) : (
                         <>
                           <span className="font-bold">{String(gridPage + 1).padStart(2, '0')}</span><span style={{marginLeft: 'calc(0.125em + 1px)', marginRight: '0.125em'}}>/</span>{String(Math.max(1, Math.ceil(totalProfiles / 8))).padStart(2, '0')} <span style={{marginLeft: '0.25em'}}>Pages</span>
@@ -1650,10 +1821,10 @@ function PersonDetailPage() {
               <div className="flex items-center">
                 <button
                   onClick={handlePrevious}
-                  disabled={!canGoPrevious || currentLength <= 1}
+                  disabled={!canGoPrevious}
                   className="page-nav-button page-nav-button-left h-[40px] w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center"
                   style={{
-                    color: (!canGoPrevious || currentLength <= 1) ? '#d1d5db' : '#4242ea',
+                    color: !canGoPrevious ? '#d1d5db' : '#4242ea',
                     backgroundColor: '#ffffff',
                     marginRight: '5px'
                   }}
@@ -1663,19 +1834,25 @@ function PersonDetailPage() {
                 </button>
                 <div className={`text-base text-gray-700 ${viewMode === 'people' ? 'w-36' : 'w-40'} text-center bg-white rounded-md border-0 h-10 px-[15px] flex items-center justify-center`}>
                   {currentLength === 0 ? (
-                    <span>No results</span>
+                    <>
+                      <span className="font-bold">0</span> <span style={{marginLeft: '0.25em'}}>{viewMode === 'people' ? 'People' : 'Projects'}</span>
+                    </>
+                  ) : currentIndex >= 0 ? (
+                    <>
+                      <span className="font-bold">{String(currentIndex + 1).padStart(2, '0')}</span><span style={{marginLeft: 'calc(0.125em + 1px)', marginRight: '0.125em'}}>/</span>{String(currentLength).padStart(2, '0')} <span style={{marginLeft: '0.25em'}}>{viewMode === 'people' ? 'People' : 'Projects'}</span>
+                    </>
                   ) : (
                     <>
-                      <span className="font-bold">{String(currentIndex + 1).padStart(2, '0')}</span><span style={{marginLeft: 'calc(0.125em + 1px)', marginRight: '0.125em'}}>/</span>{String(Math.max(1, currentLength)).padStart(2, '0')} <span style={{marginLeft: '0.25em'}}>Pages</span>
+                      <span className="font-bold">01</span><span style={{marginLeft: 'calc(0.125em + 1px)', marginRight: '0.125em'}}>/</span>{String(currentLength).padStart(2, '0')} <span style={{marginLeft: '0.25em'}}>{viewMode === 'people' ? 'People' : 'Projects'}</span>
                     </>
                   )}
                 </div>
                 <button
                   onClick={handleNext}
-                  disabled={!canGoNext || currentLength <= 1}
+                  disabled={!canGoNext}
                   className="page-nav-button h-[40px] w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center"
                   style={{
-                    color: (!canGoNext || currentLength <= 1) ? '#d1d5db' : '#4242ea',
+                    color: !canGoNext ? '#d1d5db' : '#4242ea',
                     backgroundColor: '#ffffff',
                     marginLeft: '5px'
                   }}
@@ -1910,13 +2087,25 @@ function PersonDetailPage() {
                 data-active={layoutView === 'detail'}
                 onClick={() => {
                   if (!slug) {
-                    if (viewMode === 'people' && filteredProfiles.length > 0) {
-                      navigate(`/people/${filteredProfiles[0].slug}`);
-                    } else if (viewMode === 'projects' && filteredProjects.length > 0) {
-                      navigate(`/projects/${filteredProjects[0].slug}`);
+                    // If no slug (grid view), navigate to first item
+                    // Use allProfiles/allProjects (which are filtered when filters are active)
+                    if (viewMode === 'people') {
+                      if (allProfiles.length > 0) {
+                        navigate(`/people/${allProfiles[0].slug}`);
+                      }
+                    } else if (viewMode === 'projects') {
+                      if (allProjects.length > 0) {
+                        navigate(`/projects/${allProjects[0].slug}`);
+                      }
                     }
-                  } else {
+                    // Always set layout view to detail when clicking detail button
                     setLayoutView('detail');
+                  } else {
+                    // If we have a slug, we're already in detail view, so do nothing
+                    // But ensure layoutView is set to detail
+                    if (layoutView !== 'detail') {
+                    setLayoutView('detail');
+                    }
                   }
                 }}
               >
@@ -2269,7 +2458,9 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
               
               <div className="text-base text-gray-700 w-28 text-center bg-white rounded-md border-0 h-10 px-[15px] flex items-center justify-center">
                 {totalProjects === 0 ? (
-                  <span>No results</span>
+                  <>
+                    <span className="font-bold">0</span> <span style={{marginLeft: '0.25em'}}>Pages</span>
+                  </>
                 ) : (
                   <>
                     <span className="font-bold">{String(gridPage + 1).padStart(2, '0')}</span><span style={{marginLeft: 'calc(0.125em + 1px)', marginRight: '0.125em'}}>/</span>{String(Math.max(1, Math.ceil(totalProjects / 8))).padStart(2, '0')} <span style={{marginLeft: '0.25em'}}>Pages</span>
@@ -2367,7 +2558,9 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
               
               <div className="text-base text-gray-700 w-28 text-center bg-white rounded-md border-0 h-10 px-[15px] flex items-center justify-center">
                 {totalProfiles === 0 ? (
-                  <span>No results</span>
+                  <>
+                    <span className="font-bold">0</span> <span style={{marginLeft: '0.25em'}}>Pages</span>
+                  </>
                 ) : (
                   <>
                     <span className="font-bold">{String(gridPage + 1).padStart(2, '0')}</span><span style={{marginLeft: 'calc(0.125em + 1px)', marginRight: '0.125em'}}>/</span>{String(Math.max(1, Math.ceil(totalProfiles / 8))).padStart(2, '0')} <span style={{marginLeft: '0.25em'}}>Pages</span>
@@ -2676,6 +2869,8 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
               current={currentIndex + 1}
               total={currentLength}
               viewMode={viewMode}
+              isDetail={true}
+              hasContent={!!(person || project)}
             />
             <PageNavButton
               onClick={handleNext}
@@ -2683,21 +2878,62 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
               direction="right"
               ariaLabel="Next"
             />
-          </div>
+            </div>
           )}
 
+          {/* Show "No results" without Card wrapper, or show content in Card */}
+          {(viewMode === 'people' && allProfiles.length === 0 && !person) || (viewMode === 'projects' && allProjects.length === 0 && !project) ? (
+            <div className="flex flex-col items-center justify-center" style={{minHeight: 'calc(100vh - 12rem)', gap: '1rem'}}>
+              <Frown className="text-[#4242ea] error-icon" style={{width: '3rem', height: '3rem'}} strokeWidth={1.5} stroke="#4242ea" />
+              <p className="text-[#4242ea] uppercase" style={{fontFamily: "'Galano Grotesque', sans-serif", fontSize: '1.5rem', fontWeight: 400}}>
+                {viewMode === 'people' ? "Sorry! Can't find anyone" : "Sorry! Can't find any projects"}
+              </p>
+            <button
+                style={{marginTop: '1rem'}}
+                onClick={() => {
+                  if (viewMode === 'people') {
+                    setPeopleFilters({ search: '', skills: [], industries: [], openToWork: false });
+                    setPeopleSearchInput('');
+                    // Navigate to first person after clearing filters
+                    if (allProfiles.length > 0) {
+                      navigate(`/people/${allProfiles[0].slug}`);
+                    }
+                  } else {
+                    setProjectFilters({ search: '', skills: [], sectors: [] });
+                    setProjectSearchInput('');
+                    // Navigate to first project after clearing filters
+                    if (allProjects.length > 0) {
+                      navigate(`/projects/${allProjects[0].slug}`);
+                    }
+                  }
+                  setSearchCommitted(false);
+                  setSearchFocused(false);
+                  setSearchHovered(false);
+                  if (searchInputRef.current) {
+                    searchInputRef.current.blur();
+                  }
+                  if (searchInputRefDesktop.current) {
+                    searchInputRefDesktop.current.blur();
+                  }
+                }}
+                className="page-nav-button h-10 px-6 rounded-full border-[1.5px] border-[#4242ea] bg-[#e3e3e3] text-[#4242ea] transition-all"
+              >
+                <span className="relative z-10">Clear Search</span>
+            </button>
+          </div>
+          ) : (
           <Card className="rounded-xl border-2 border-white shadow-none mb-12 md:mb-12" style={{
             backgroundColor: 'white', 
             minHeight: '800px',
             marginBottom: 'calc(3rem + 70px)', // Extra space for mobile nav on mobile
             animation: 'fadeIn 0.3s ease-in-out',
           }}>
-            <CardContent className="p-4 md:p-6">
+            <CardContent className="p-4 md:p-[30px]">
               {/* Render Person or Project based on viewMode */}
               {viewMode === 'people' && person && (
               <>
               {/* Header with Photo and Name */}
-              <div className="flex flex-col md:flex-row items-start gap-6 mb-6">
+              <div className="flex flex-col md:flex-row gap-6 mb-6 items-start">
                 {/* Profile Photo Card and Highlights */}
                 <div className="flex-shrink-0 w-full md:w-60">
                   <div className="rounded-lg overflow-hidden mb-4" style={{height: '270px'}}>
@@ -2735,17 +2971,17 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                 </div>
                 
                 {/* Name and Info */}
-                <div className="flex-1 w-full md:w-auto pt-0 md:pt-4">
+                <div className="flex-1 w-full md:w-auto">
                   <div className="flex flex-col sm:flex-row sm:items-start justify-between mb-4">
                     <div>
                       <div className="flex flex-col sm:flex-row sm:items-baseline gap-2 sm:gap-3">
-                        <h1 className="font-bold uppercase tracking-tight text-2xl md:text-3xl" style={{fontFamily: "'Galano Grotesque', sans-serif"}}>{person.name}</h1>
+                        <h1 className="font-bold uppercase tracking-tight text-2xl md:text-3xl" style={{fontFamily: "'Galano Grotesque', sans-serif", margin: 0, lineHeight: '1.1'}}>{person.name}</h1>
                         {person.title && (
                           <p className="text-base md:text-lg text-gray-600">{person.title}</p>
                         )}
                       </div>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 items-start">
                       {person.linkedin_url && (
                         <a href={person.linkedin_url} target="_blank" rel="noopener noreferrer">
                           <Button size="icon" style={{ backgroundColor: '#0A66C2', color: 'white' }} className="hover:opacity-90">
@@ -3215,6 +3451,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
               )}
             </CardContent>
           </Card>
+          )}
             </>
           )}
         </div>

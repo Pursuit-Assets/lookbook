@@ -188,14 +188,27 @@ const createProfile = async (profileData) => {
       user_id, slug, title, bio, skills, industry_expertise,
       open_to_work, highlights, photo_url, photo_lqip,
       linkedin_url, github_url, website_url, x_url, featured
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+    ) VALUES ($1, $2, $3, $4, $5::text[], $6::text[], $7, $8::text[], $9, $10, $11, $12, $13, $14, $15)
     RETURNING *
   `;
   
+  // Ensure arrays are properly formatted
   const params = [
-    userId, slug, title, bio, skills, industryExpertise,
-    openToWork, highlights, photoUrl, photoLqip,
-    linkedinUrl, githubUrl, websiteUrl, xUrl, featured
+    userId, 
+    slug, 
+    title, 
+    bio, 
+    Array.isArray(skills) ? skills : [], 
+    Array.isArray(industryExpertise) ? industryExpertise : [],
+    openToWork, 
+    Array.isArray(highlights) ? highlights : [], 
+    photoUrl, 
+    photoLqip,
+    linkedinUrl, 
+    githubUrl, 
+    websiteUrl, 
+    xUrl, 
+    featured
   ];
   
   const result = await pool.query(query, params);
