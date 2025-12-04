@@ -72,35 +72,67 @@ function AdminBulkUploadPage() {
   };
 
   const processPersonRow = (row) => {
+    // Validate required fields
+    if (!row.name || !row.slug) {
+      throw new Error('Missing required fields: name and slug are required');
+    }
+    
+    // Normalize slug (trim, lowercase, replace spaces with hyphens)
+    const normalizedSlug = (row.slug || '')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '-')
+      .replace(/[^a-z0-9-_]/g, '');
+    
+    if (!normalizedSlug) {
+      throw new Error('Invalid slug: slug must contain at least one alphanumeric character');
+    }
+    
     return {
-      name: row.name,
-      title: row.title,
-      slug: row.slug,
+      name: row.name.trim(),
+      title: row.title || '',
+      slug: normalizedSlug,
       bio: row.bio || '',
       photo_url: row.photo_url || '',
       linkedin_url: row.linkedin_url || '',
       x_url: row.x_url || '',
       website_url: row.website_url || '',
-      skills: row.skills ? row.skills.split(',').map(s => s.trim()) : [],
-      industry_expertise: row.industry_expertise ? row.industry_expertise.split(',').map(s => s.trim()) : [],
-      highlights: row.highlights ? row.highlights.split('|').map(s => s.trim()) : [],
+      skills: row.skills ? row.skills.split(',').map(s => s.trim()).filter(s => s) : [],
+      industry_expertise: row.industry_expertise ? row.industry_expertise.split(',').map(s => s.trim()).filter(s => s) : [],
+      highlights: row.highlights ? row.highlights.split('|').map(s => s.trim()).filter(s => s) : [],
       open_to_work: row.open_to_work === 'true' || row.open_to_work === '1',
       experience: []
     };
   };
 
   const processProjectRow = (row) => {
+    // Validate required fields
+    if (!row.title || !row.slug) {
+      throw new Error('Missing required fields: title and slug are required');
+    }
+    
+    // Normalize slug (trim, lowercase, replace spaces with hyphens)
+    const normalizedSlug = (row.slug || '')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '-')
+      .replace(/[^a-z0-9-_]/g, '');
+    
+    if (!normalizedSlug) {
+      throw new Error('Invalid slug: slug must contain at least one alphanumeric character');
+    }
+    
     return {
-      title: row.title,
-      slug: row.slug,
+      title: row.title.trim(),
+      slug: normalizedSlug,
       summary: row.summary || '',
       short_description: row.short_description || '',
       main_image_url: row.main_image_url || '',
       demo_video_url: row.demo_video_url || '',
       github_url: row.github_url || '',
       live_url: row.live_url || '',
-      skills: row.skills ? row.skills.split(',').map(s => s.trim()) : [],
-      sectors: row.sectors ? row.sectors.split(',').map(s => s.trim()) : []
+      skills: row.skills ? row.skills.split(',').map(s => s.trim()).filter(s => s) : [],
+      sectors: row.sectors ? row.sectors.split(',').map(s => s.trim()).filter(s => s) : []
     };
   };
 
@@ -136,10 +168,11 @@ function AdminBulkUploadPage() {
             successResults.push({ row: i + 1, name: projectData.title });
           }
         } catch (error) {
+          const errorMessage = error.response?.data?.error || error.message || 'Unknown error';
           errorResults.push({
             row: i + 1,
             name: row.name || row.title || 'Unknown',
-            error: error.response?.data?.error || error.message
+            error: errorMessage
           });
         }
       }

@@ -67,6 +67,11 @@ api.interceptors.response.use(
   (response) => response.data,
   (error) => {
     console.error('API Error:', error.response || error);
+    // Ensure error.response.data is preserved for error handling
+    if (error.response && error.response.data) {
+      // Attach the error data to the error object for easier access
+      error.responseData = error.response.data;
+    }
     return Promise.reject(error);
   }
 );

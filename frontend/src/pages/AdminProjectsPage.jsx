@@ -1,21 +1,64 @@
-import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { projectsAPI } from '../utils/api';
 import AdminLayout from '../components/AdminLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Search, Edit, Eye } from 'lucide-react';
+import { Plus, Search, Edit, Eye, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
+import ConfirmDialog from '../components/ConfirmDialog';
 
 function AdminProjectsPage() {
+  const location = useLocation();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [deleteDialog, setDeleteDialog] = useState({ isOpen: false, project: null });
+  const prevLocationKeyRef = useRef(null);
+  const lastFetchTimeRef = useRef(0);
+  const hasRefreshedFromStateRef = useRef(false);
 
   useEffect(() => {
     fetchProjects();
+    lastFetchTimeRef.current = Date.now();
+    prevLocationKeyRef.current = location.key;
   }, []);
+
+  // Refresh when navigating to this page (e.g., after creating/editing a project)
+  useEffect(() => {
+    // Only process if we're on the projects page
+    if (location.pathname !== '/admin/projects') {
+      prevLocationKeyRef.current = location.key;
+      hasRefreshedFromStateRef.current = false;
+      return;
+    }
+
+    // Skip if this is the initial mount
+    if (prevLocationKeyRef.current === null) {
+      prevLocationKeyRef.current = location.key;
+      return;
+    }
+    
+    const timeSinceLastFetch = Date.now() - lastFetchTimeRef.current;
+    const shouldRefresh = timeSinceLastFetch > 100;
+    
+    // Always refresh if we have refresh state (highest priority)
+    if (location.state?.refresh && !hasRefreshedFromStateRef.current && shouldRefresh) {
+      fetchProjects();
+      lastFetchTimeRef.current = Date.now();
+      hasRefreshedFromStateRef.current = true;
+    }
+    // Also refresh if location key changed (navigation occurred)
+    else if (location.key !== prevLocationKeyRef.current && shouldRefresh) {
+      fetchProjects();
+      lastFetchTimeRef.current = Date.now();
+      hasRefreshedFromStateRef.current = false;
+    }
+    
+    prevLocationKeyRef.current = location.key;
+  }, [location.pathname, location.state, location.key]);
 
   const fetchProjects = async () => {
     try {
@@ -33,6 +76,36 @@ function AdminProjectsPage() {
     project.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     project.summary?.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const handleDeleteClick = (project) => {
+    setDeleteDialog({ isOpen: true, project });
+  };
+
+  const handleDeleteConfirm = async () => {
+    const { project } = deleteDialog;
+    if (!project) return;
+
+    const projectSlug = project.slug; // Store slug before closing dialog
+
+    try {
+      await projectsAPI.delete(projectSlug);
+      toast.success('Project deleted successfully');
+      setDeleteDialog({ isOpen: false, project: null });
+      // Remove the deleted project from the list immediately using slug
+      setProjects(prevProjects => prevProjects.filter(p => p.slug !== projectSlug));
+      // Also refresh from server to ensure consistency
+      await fetchProjects();
+    } catch (error) {
+      const errorMessage = error.response?.data?.error || error.response?.data?.message || error.message || 'Failed to delete project';
+      toast.error(errorMessage);
+      console.error('Error deleting project:', error);
+      setDeleteDialog({ isOpen: false, project: null });
+    }
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteDialog({ isOpen: false, project: null });
+  };
 
   return (
     <AdminLayout>
@@ -172,6 +245,13 @@ function AdminProjectsPage() {
                             <Edit className="w-4 h-4" />
                           </Button>
                         </Link>
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          onClick={() => handleDeleteClick(project)}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
                       </div>
                     </td>
                   </tr>
@@ -187,6 +267,13 @@ function AdminProjectsPage() {
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        isOpen={deleteDialog.isOpen}
+        onClose={handleDeleteCancel}
+        onConfirm={handleDeleteConfirm}
+        message={`Delete ${deleteDialog.project?.title || 'this project'}?`}
+      />
     </AdminLayout>
   );
 }

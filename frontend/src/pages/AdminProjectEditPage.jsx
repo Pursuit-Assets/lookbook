@@ -295,7 +295,10 @@ function AdminProjectEditPage() {
           description: `Changes to ${formData.title} have been saved.`
         });
       }
-      navigate('/admin/projects');
+      navigate('/admin/projects', { 
+        state: { refresh: true, timestamp: Date.now() },
+        replace: false
+      });
     } catch (error) {
       console.error('Error saving project:', error);
       toast.error('Failed to save project', {

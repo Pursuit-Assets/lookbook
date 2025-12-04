@@ -1,26 +1,72 @@
-import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { profilesAPI, getImageUrl } from '../utils/api';
 import AdminLayout from '../components/AdminLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Search, Edit, Eye } from 'lucide-react';
+import { Plus, Search, Edit, Eye, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
+import ConfirmDialog from '../components/ConfirmDialog';
 
 function AdminPeoplePage() {
+  const location = useLocation();
   const [people, setPeople] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [deleteDialog, setDeleteDialog] = useState({ isOpen: false, person: null });
+  const prevLocationKeyRef = useRef(null);
+  const lastFetchTimeRef = useRef(0);
+  const hasRefreshedFromStateRef = useRef(false);
 
   useEffect(() => {
     fetchPeople();
+    lastFetchTimeRef.current = Date.now();
+    prevLocationKeyRef.current = location.key;
   }, []);
+
+  // Refresh when navigating to this page (e.g., after creating/editing a person)
+  useEffect(() => {
+    // Only process if we're on the people page
+    if (location.pathname !== '/admin/people') {
+      prevLocationKeyRef.current = location.key;
+      hasRefreshedFromStateRef.current = false;
+      return;
+    }
+
+    // Skip if this is the initial mount
+    if (prevLocationKeyRef.current === null) {
+      prevLocationKeyRef.current = location.key;
+      return;
+    }
+    
+    const timeSinceLastFetch = Date.now() - lastFetchTimeRef.current;
+    const shouldRefresh = timeSinceLastFetch > 100;
+    const keyChanged = location.key !== prevLocationKeyRef.current;
+    const hasRefreshState = location.state?.refresh;
+    
+    // Always refresh if we have refresh state (highest priority) - ignore time check for refresh state
+    if (hasRefreshState && !hasRefreshedFromStateRef.current) {
+      fetchPeople();
+      lastFetchTimeRef.current = Date.now();
+      hasRefreshedFromStateRef.current = true;
+    }
+    // Also refresh if location key changed (navigation occurred) - but respect time check
+    else if (keyChanged && shouldRefresh) {
+      fetchPeople();
+      lastFetchTimeRef.current = Date.now();
+      hasRefreshedFromStateRef.current = false;
+    }
+    
+    prevLocationKeyRef.current = location.key;
+  }, [location.pathname, location.state, location.key]);
 
   const fetchPeople = async () => {
     try {
       setLoading(true);
-      const response = await profilesAPI.getAll({ limit: 50 });
+      // Add cache-busting parameter to force fresh data from backend (bypasses server-side cache)
+      const response = await profilesAPI.getAll({ limit: 50, _t: Date.now() });
       setPeople(response.data || []);
     } catch (error) {
       console.error('Error fetching people:', error);
@@ -33,6 +79,36 @@ function AdminPeoplePage() {
     person.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     person.title?.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const handleDeleteClick = (person) => {
+    setDeleteDialog({ isOpen: true, person });
+  };
+
+  const handleDeleteConfirm = async () => {
+    const { person } = deleteDialog;
+    if (!person) return;
+
+    const personSlug = person.slug; // Store slug before closing dialog
+
+    try {
+      await profilesAPI.delete(personSlug);
+      // Remove the deleted person from the list immediately using slug
+      setPeople(prevPeople => prevPeople.filter(p => p.slug !== personSlug));
+      toast.success('Person deleted successfully');
+      setDeleteDialog({ isOpen: false, person: null });
+      // Also refresh from server to ensure consistency (but don't await to avoid blocking)
+      fetchPeople();
+    } catch (error) {
+      const errorMessage = error.response?.data?.error || error.response?.data?.message || error.message || 'Failed to delete person';
+      toast.error(errorMessage);
+      console.error('Error deleting person:', error);
+      setDeleteDialog({ isOpen: false, person: null });
+    }
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteDialog({ isOpen: false, person: null });
+  };
 
   return (
     <AdminLayout>
@@ -137,7 +213,8 @@ function AdminPeoplePage() {
                           <div className="text-sm text-gray-500">{person.title}</div>
                         </div>
                       </div>
-                    </td>                    <td className="px-6 py-4">
+                    </td>
+                    <td className="px-6 py-4">
                       <div className="flex flex-wrap gap-1">
                         {person.skills?.slice(0, 3).map((skill, idx) => (
                           <Badge 
@@ -184,6 +261,13 @@ function AdminPeoplePage() {
                             <Edit className="w-4 h-4" />
                           </Button>
                         </Link>
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          onClick={() => handleDeleteClick(person)}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
                       </div>
                     </td>
                   </tr>
@@ -199,6 +283,13 @@ function AdminPeoplePage() {
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        isOpen={deleteDialog.isOpen}
+        onClose={handleDeleteCancel}
+        onConfirm={handleDeleteConfirm}
+        message={`Delete ${deleteDialog.person?.name || 'this person'}?`}
+      />
     </AdminLayout>
   );
 }
