@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Users, Briefcase, Home, Upload, LogOut, Tags } from 'lucide-react';
+import { Users, Briefcase, Home, Upload, LogOut, Tags, Rocket } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 function AdminLayout({ children }) {
@@ -70,6 +70,18 @@ function AdminLayout({ children }) {
             >
               <Briefcase className="w-5 h-5" />
               <span>Projects</span>
+            </Link>
+            
+            <Link
+              to="/admin/initiatives"
+              className={`flex items-center gap-3 px-3 py-2 rounded-md transition-colors ${
+                isActive('/admin/initiatives')
+                  ? 'bg-blue-50 text-blue-600 font-medium'
+                  : 'text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              <Rocket className="w-5 h-5" />
+              <span>Initiatives</span>
             </Link>
             
             <Link

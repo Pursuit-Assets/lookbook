@@ -311,14 +311,15 @@ function HomePage() {
                   {/* Profile Avatars */}
                   <div 
                     className="mb-6 flex -space-x-3 relative" 
-                    style={{height: '64px'}}
+                    style={{height: '56px'}}
                   >
                     {visibleProfiles.map((profile, i) => (
                       <div 
                         key={`${i}-${profile.slug}`}
-                        className="w-16 h-16 rounded-full border-4 border-white overflow-hidden bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-sm font-semibold"
+                        className="w-14 h-14 flex-shrink-0 rounded-full border-4 border-white overflow-hidden bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-sm font-semibold"
                         title={`${profile.user?.first_name || ''} ${profile.user?.last_name || ''}`}
                         style={{
+                          aspectRatio: '1 / 1',
                           animation: isInitialLoad ? `slideInRight 0.6s ease-out` : 'fadeIn 0.4s ease-in',
                           animationDelay: isInitialLoad ? `${i * 0.1}s` : '0s',
                           animationFillMode: 'both',
@@ -429,7 +430,7 @@ function HomePage() {
                   {/* Project Icons */}
                   <div 
                     className="mb-6 flex -space-x-3 relative" 
-                    style={{height: '64px'}}
+                    style={{height: '56px'}}
                   >
                     {visibleProjects.map((project, i) => {
                       // Get project icon or first image
@@ -453,9 +454,10 @@ function HomePage() {
                       return (
                         <div
                           key={`${i}-${project.slug}`}
-                          className="w-16 h-16 rounded-full border-4 border-white overflow-hidden bg-gradient-to-br from-orange-500 to-red-500 flex items-center justify-center text-white text-sm font-semibold"
+                          className="w-14 h-14 flex-shrink-0 rounded-full border-4 border-white overflow-hidden bg-gradient-to-br from-orange-500 to-red-500 flex items-center justify-center text-white text-sm font-semibold"
                           title={project.name}
                           style={{
+                            aspectRatio: '1 / 1',
                             animation: isInitialLoad ? `slideInRight 0.6s ease-out` : 'fadeIn 0.4s ease-in',
                             animationDelay: isInitialLoad ? `${i * 0.1}s` : '0s',
                             animationFillMode: 'both',

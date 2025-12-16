@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { projectsAPI, profilesAPI, getImageUrl } from '../utils/api';
+import { projectsAPI, profilesAPI, initiativesAPI, getImageUrl } from '../utils/api';
 import AdminLayout from '../components/AdminLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Save, ArrowLeft, Plus, X, Upload, Link as LinkIcon, Eye, Edit3, ExternalLink, Github } from 'lucide-react';
+import { Save, ArrowLeft, Plus, X, Upload, Link as LinkIcon, Eye, Edit3, ExternalLink, Github, Rocket } from 'lucide-react';
 
 function AdminProjectEditPage() {
   const { slug } = useParams();
@@ -19,6 +19,7 @@ function AdminProjectEditPage() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [allPeople, setAllPeople] = useState([]);
+  const [initiatives, setInitiatives] = useState([]);
   const [participantSearch, setParticipantSearch] = useState('');
   const [formData, setFormData] = useState({
     title: '',
@@ -36,7 +37,8 @@ function AdminProjectEditPage() {
     slug: '',
     has_partner: false,
     partner_name: '',
-    partner_logo_url: ''
+    partner_logo_url: '',
+    cohort: '' // Initiative cohort value
   });
 
   const [skillInput, setSkillInput] = useState('');
@@ -227,6 +229,7 @@ function AdminProjectEditPage() {
 
   useEffect(() => {
     fetchAllPeople();
+    fetchInitiatives();
     if (!isNew) {
       fetchProject();
     }
@@ -238,6 +241,15 @@ function AdminProjectEditPage() {
       setAllPeople(response.data || []);
     } catch (error) {
       console.error('Error fetching people:', error);
+    }
+  };
+
+  const fetchInitiatives = async () => {
+    try {
+      const response = await initiativesAPI.getAll();
+      setInitiatives(response.data || []);
+    } catch (error) {
+      console.error('Error fetching initiatives:', error);
     }
   };
 
@@ -270,7 +282,8 @@ function AdminProjectEditPage() {
         slug: project.slug || '',
         has_partner: project.has_partner || false,
         partner_name: project.partner_name || '',
-        partner_logo_url: project.partner_logo_url || ''
+        partner_logo_url: project.partner_logo_url || '',
+        cohort: project.cohort || ''
       });
     } catch (error) {
       console.error('Error fetching project:', error);
@@ -573,6 +586,45 @@ function AdminProjectEditPage() {
                     )}
                   </div>
                 </>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Initiative */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Rocket className="w-5 h-5" />
+                Initiative
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <Label htmlFor="cohort">Assign to Initiative</Label>
+                <select
+                  id="cohort"
+                  value={formData.cohort}
+                  onChange={(e) => setFormData({ ...formData, cohort: e.target.value })}
+                  className="w-full mt-1 px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">No Initiative (show in all projects)</option>
+                  {initiatives.map((initiative) => (
+                    <option key={initiative.id} value={initiative.cohort_value}>
+                      {initiative.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  Assigning to an initiative will group this project with others in that cohort
+                </p>
+              </div>
+              
+              {formData.cohort && (
+                <div className="p-3 bg-purple-50 rounded-lg border border-purple-200">
+                  <p className="text-sm text-purple-800">
+                    <strong>Selected:</strong> {initiatives.find(i => i.cohort_value === formData.cohort)?.name || formData.cohort}
+                  </p>
+                </div>
               )}
             </CardContent>
           </Card>

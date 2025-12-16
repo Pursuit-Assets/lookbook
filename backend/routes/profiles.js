@@ -486,6 +486,7 @@ router.put('/:slug', async (req, res) => {
   try {
     const { slug } = req.params;
     const updates = req.body;
+    let nameUpdateWarning = null;  // Track if name update failed due to permissions
     
     console.log('📝 Profile update request for slug:', slug);
     console.log('📝 Update data received:', Object.keys(updates));
@@ -589,29 +590,22 @@ router.put('/:slug', async (req, res) => {
         console.error('Error detail:', nameUpdateError.detail);
         console.error('Error stack:', nameUpdateError.stack);
         
-        // If it's a permission error, log it clearly and include in response
+        // If it's a permission error, log it clearly and track warning (but continue with other updates)
         if (nameUpdateError.code === '42501' || nameUpdateError.message.includes('permission denied')) {
           console.error('⚠️⚠️⚠️ UPDATE permission not available on users table ⚠️⚠️⚠️');
           console.error('⚠️ The profile was updated, but the user name could not be changed.');
-          console.error('⚠️ Please contact your database administrator to grant UPDATE permission on the users table.');
-          
-          // Include a warning in the response so the user knows
-          return res.json({
-            success: true,
-            data: updatedProfile,
-            message: 'Profile updated successfully',
-            warning: 'Profile updated, but name could not be changed due to database permissions. Please contact your database administrator.'
-          });
+          console.error('⚠️ Continuing with experience updates...');
+          nameUpdateWarning = 'Name could not be changed due to database permissions, but other changes were saved.';
+        } else {
+          // For other errors, just log but don't fail the request
+          console.error('⚠️ Name update failed, but continuing with other updates');
         }
-        
-        // For other errors, just log but don't fail the request
-        console.error('⚠️ Name update failed, but profile update succeeded');
       }
     } else {
       console.log('ℹ️ No name in updates, skipping user name update');
     }
     
-    // If experience data is provided, update it
+    // If experience data is provided, update it (this MUST run regardless of name update result)
     if (experience && Array.isArray(experience)) {
       // First, delete all existing experience for this profile
       await pool.query('DELETE FROM lookbook_experience WHERE profile_id = $1', [updatedProfile.id]);
@@ -636,11 +630,18 @@ router.put('/:slug', async (req, res) => {
     // Invalidate cache
     cache.profiles = null;
     
-    res.json({
+    // Build response with optional warning
+    const response = {
       success: true,
       data: updatedProfile,
       message: 'Profile updated successfully'
-    });
+    };
+    
+    if (nameUpdateWarning) {
+      response.warning = nameUpdateWarning;
+    }
+    
+    res.json(response);
   } catch (error) {
     console.error('Error updating profile:', error);
     res.status(500).json({ 

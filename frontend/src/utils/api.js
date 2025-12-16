@@ -175,6 +175,18 @@ export const taxonomyAPI = {
   deleteIndustry: (id) => api.delete(`/taxonomy/industries/${id}`),
 };
 
+// =====================================================
+// INITIATIVES ENDPOINTS
+// =====================================================
+
+export const initiativesAPI = {
+  getAll: (includeInactive = false) => api.get('/initiatives', { params: { includeInactive } }),
+  getBySlug: (slug) => api.get(`/initiatives/${slug}`),
+  create: (data) => api.post('/initiatives', data),
+  update: (id, data) => api.put(`/initiatives/${id}`, data),
+  delete: (id) => api.delete(`/initiatives/${id}`),
+};
+
 export default api;
 
 

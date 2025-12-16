@@ -5,29 +5,35 @@ require('dotenv').config();
 const { Pool } = require('pg');
 
 // Create connection configuration
-const dbConfig = {
-  // Individual connection parameters (for Railway style)
-  user: process.env.DB_USER,
-  host: process.env.DB_HOST,
-  database: process.env.DB_NAME,
-  password: process.env.DB_PASSWORD,
-  port: process.env.DB_PORT || 5432,
-  // Connection pool settings for better performance
-  max: 20, // Maximum number of clients in the pool
-  idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
-  connectionTimeoutMillis: 2000, // Return an error after 2 seconds if connection cannot be established
-};
+let dbConfig;
 
-// For production/hosted databases with SSL
 if (process.env.DATABASE_URL) {
   // Use DATABASE_URL if provided (Heroku, Railway, etc.)
-  dbConfig.connectionString = process.env.DATABASE_URL;
+  dbConfig = {
+    connectionString: process.env.DATABASE_URL,
+    // Connection pool settings for better performance
+    max: 20,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 2000,
+  };
   // SSL configuration for hosted databases
   if (process.env.NODE_ENV === 'production') {
     dbConfig.ssl = {
       rejectUnauthorized: false
     };
   }
+} else {
+  // Use individual connection parameters
+  dbConfig = {
+    user: process.env.DB_USER,
+    host: process.env.DB_HOST,
+    database: process.env.DB_NAME,
+    password: process.env.DB_PASSWORD,
+    port: process.env.DB_PORT || 5432,
+    max: 20,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 2000,
+  };
 }
 
 // Create connection pool

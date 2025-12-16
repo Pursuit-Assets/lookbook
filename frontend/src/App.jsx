@@ -15,6 +15,7 @@ import AdminPersonEditPage from './pages/AdminPersonEditPage';
 import AdminProjectEditPage from './pages/AdminProjectEditPage';
 import AdminBulkUploadPage from './pages/AdminBulkUploadPage';
 import AdminTaxonomyPage from './pages/AdminTaxonomyPage';
+import AdminInitiativesPage from './pages/AdminInitiativesPage';
 import { AuthProvider } from './contexts/AuthContext';
 import { LoadingProgressProvider } from './contexts/LoadingProgressContext';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -47,6 +48,7 @@ function App() {
           <Route path="/admin/projects/:slug/edit" element={<ProtectedRoute><AdminProjectEditPage /></ProtectedRoute>} />
           <Route path="/admin/bulk-upload" element={<ProtectedRoute><AdminBulkUploadPage /></ProtectedRoute>} />
           <Route path="/admin/taxonomy" element={<ProtectedRoute><AdminTaxonomyPage /></ProtectedRoute>} />
+          <Route path="/admin/initiatives" element={<ProtectedRoute><AdminInitiativesPage /></ProtectedRoute>} />
           </Routes>
         </div>
       </LoadingProgressProvider>

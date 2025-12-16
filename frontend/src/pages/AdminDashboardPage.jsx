@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { profilesAPI, projectsAPI } from '../utils/api';
 import AdminLayout from '../components/AdminLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Users, Briefcase, TrendingUp, Clock, Tags } from 'lucide-react';
+import { Users, Briefcase, TrendingUp, Clock, Tags, Rocket } from 'lucide-react';
 
 function AdminDashboardPage() {
   const [stats, setStats] = useState({
@@ -184,6 +184,29 @@ function AdminDashboardPage() {
                   style={{backgroundColor: '#4242ea'}}
                 >
                   Manage Taxonomy
+                </Link>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Rocket className="w-5 h-5" />
+                Initiatives
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-gray-600 mb-4">
+                Manage project initiatives like SMB cohorts and Demo Days to group and filter projects.
+              </p>
+              <div className="space-y-2">
+                <Link
+                  to="/admin/initiatives"
+                  className="block px-4 py-2 text-center rounded-md text-white hover:opacity-90 transition-opacity"
+                  style={{backgroundColor: '#4242ea'}}
+                >
+                  Manage Initiatives
                 </Link>
               </div>
             </CardContent>

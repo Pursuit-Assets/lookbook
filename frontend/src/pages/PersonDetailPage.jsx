@@ -1,6 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useMemo, useCallback, memo, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { profilesAPI, projectsAPI, getImageUrl } from '../utils/api';
+import { profilesAPI, projectsAPI, initiativesAPI, getImageUrl } from '../utils/api';
 import analytics from '../utils/analytics';
 import { useLoadingProgress } from '../contexts/LoadingProgressContext';
 import LazyVideo from '../components/LazyVideo';
@@ -566,6 +566,8 @@ const MemoizedProjectCard = memo(ProjectCard, (prevProps, nextProps) => {
          prevProps.proj.featured === nextProps.proj.featured;
 });
 
+// Initiative definitions will be fetched from API
+
 function PersonDetailPage() {
   const { slug } = useParams();
   const navigate = useNavigate();
@@ -614,6 +616,7 @@ function PersonDetailPage() {
       setPeopleSearchInput('');
       setProjectFilters({ search: '', skills: [], sectors: [] });
       setProjectSearchInput('');
+      setSelectedInitiative(null);
       setSearchCommitted(false);
       setSearchFocused(false);
       setSearchHovered(false);
@@ -629,6 +632,7 @@ function PersonDetailPage() {
       } else {
         setProjectFilters({ search: '', skills: [], sectors: [] });
         setProjectSearchInput('');
+        setSelectedInitiative(null);
       }
       setSearchCommitted(false);
       setSearchFocused(false);
@@ -672,6 +676,10 @@ function PersonDetailPage() {
     skills: [],
     sectors: []
   });
+  
+  // Initiative filter for projects (SMB Winter 2025, Demo Day Fall 2025, etc.)
+  const [selectedInitiative, setSelectedInitiative] = useState(null);
+  const [initiatives, setInitiatives] = useState([]);
 
   // Debounce search terms to reduce API calls (500ms feels more responsive)
   const debouncedPeopleSearch = useDebounce(peopleFilters.search, 500);
@@ -713,6 +721,14 @@ function PersonDetailPage() {
   }), [allProfiles, debouncedPeopleSearch, peopleFilters.skills, peopleFilters.industries, peopleFilters.openToWork]);
 
   const filteredProjects = useMemo(() => allProjects.filter(project => {
+    // Initiative filter (cohort-based)
+    if (selectedInitiative) {
+      const initiative = initiatives.find(i => i.slug === selectedInitiative);
+      if (initiative && project.cohort !== initiative.cohort_value) {
+        return false;
+      }
+    }
+    
     // Search filter (using debounced value)
     if (debouncedProjectSearch) {
       const searchLower = debouncedProjectSearch.toLowerCase();
@@ -740,7 +756,7 @@ function PersonDetailPage() {
     }
     
     return true;
-  }), [allProjects, debouncedProjectSearch, projectFilters.skills, projectFilters.sectors]);
+  }), [allProjects, debouncedProjectSearch, projectFilters.skills, projectFilters.sectors, selectedInitiative, initiatives]);
 
   // Filter person's projects - always show all projects for that person
   // Filters don't affect the "Select Projects" section on person detail pages
@@ -926,13 +942,14 @@ function PersonDetailPage() {
     };
   }, [gridPage, viewMode, debouncedPeopleSearch, debouncedProjectSearch, peopleFilters.skills, peopleFilters.industries, peopleFilters.openToWork, projectFilters.skills, projectFilters.sectors, layoutView]);
 
-  // Fetch filters once on mount - these are cached
+  // Fetch filters and initiatives once on mount - these are cached
   useEffect(() => {
     const fetchFilters = async () => {
       try {
-        const [peopleFiltersData, projectFiltersData] = await Promise.all([
+        const [peopleFiltersData, projectFiltersData, initiativesData] = await Promise.all([
           profilesAPI.getFilters(),
-          projectsAPI.getFilters()
+          projectsAPI.getFilters(),
+          initiativesAPI.getAll()
         ]);
         
         if (peopleFiltersData && peopleFiltersData.success) {
@@ -947,10 +964,17 @@ function PersonDetailPage() {
           console.error('Failed to fetch project filters:', projectFiltersData);
           setAvailableProjectFilters({ skills: [], sectors: [] });
         }
+        if (initiativesData && initiativesData.success) {
+          setInitiatives(initiativesData.data || []);
+        } else {
+          console.error('Failed to fetch initiatives:', initiativesData);
+          setInitiatives([]);
+        }
       } catch (err) {
         console.error('Error fetching filters:', err);
         setAvailablePeopleFilters({ skills: [], industries: [] });
         setAvailableProjectFilters({ skills: [], sectors: [] });
+        setInitiatives([]);
       }
     };
     fetchFilters();
@@ -1373,6 +1397,7 @@ function PersonDetailPage() {
     setPeopleSearchInput('');
     setProjectFilters({ search: '', skills: [], sectors: [] });
     setProjectSearchInput('');
+    setSelectedInitiative(null);
     setSearchCommitted(false);
     setSearchFocused(false);
     setSearchHovered(false);
@@ -2293,6 +2318,38 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
               {/* Project Filters */}
               {filterView === 'projects' && (
                 <div className="space-y-4">
+                  {/* Initiatives Section */}
+                  {initiatives.length > 0 && (
+                    <div className="space-y-2">
+                      <h4 className="text-sm">Initiatives</h4>
+                      <div className="space-y-1">
+                        {initiatives.map(initiative => (
+                          <button
+                            key={initiative.slug}
+                            onClick={() => {
+                              if (selectedInitiative === initiative.slug) {
+                                setSelectedInitiative(null);
+                              } else {
+                                setSelectedInitiative(initiative.slug);
+                                // Track initiative selection
+                                analytics.filterApplied('initiative', initiative.name, 'projects');
+                              }
+                            }}
+                            className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${
+                              selectedInitiative === initiative.slug
+                                ? 'bg-[#4242ea] text-white font-medium'
+                                : 'bg-white hover:bg-gray-100 text-gray-700'
+                            }`}
+                          >
+                            {initiative.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <Separator className="bg-white" />
+
                   <div className="space-y-2">
                     <h4 className="text-sm">Technologies</h4>
                     <div className="space-y-2 max-h-40 overflow-y-auto">
@@ -2400,6 +2457,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                     onClick={() => {
                       setProjectFilters({ search: '', skills: [], sectors: [] });
                       setProjectSearchInput('');
+                      setSelectedInitiative(null);
                       setSearchCommitted(false);
                       setSearchFocused(false);
                       setSearchHovered(false);
@@ -2416,27 +2474,66 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                   </button>
                 </div>
               ) : (
-                <div 
-                  key={`projects-grid-${gridPage}`}
-                  className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-[18px] mb-0" 
-                  style={{
-                  animation: 'fadeIn 0.3s ease-in-out',
-                  gridAutoRows: 'auto',
-                  overflow: 'visible'
-                  }}
-                >
-                  {/* In grid view, API already returns paginated data, so display directly */}
-                  {allProjects.map((proj, idx) => (
-                    <MemoizedProjectCard 
-                      key={proj.slug}
-                      proj={proj}
-                      onClick={() => {
-                        setLayoutView('detail');
-                        navigate(`/projects/${proj.slug}`);
+                <>
+                  {/* Initiative Header - shows when an initiative is selected */}
+                  {selectedInitiative && initiatives.find(i => i.slug === selectedInitiative) && (
+                    <div 
+                      className="mb-6 rounded-xl overflow-hidden"
+                      style={{
+                        background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)',
+                        animation: 'fadeIn 0.3s ease-in-out'
                       }}
-                    />
-                  ))}
-                </div>
+                    >
+                      <div className="p-6 md:p-8">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <h2 
+                              className="text-white font-bold uppercase tracking-wide mb-3"
+                              style={{
+                                fontFamily: "'Galano Grotesque', sans-serif",
+                                fontSize: 'clamp(1.5rem, 3vw, 2rem)'
+                              }}
+                            >
+                              {initiatives.find(i => i.slug === selectedInitiative)?.name}
+                            </h2>
+                            <p className="text-gray-300 text-base md:text-lg leading-relaxed max-w-3xl">
+                              {initiatives.find(i => i.slug === selectedInitiative)?.description}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => setSelectedInitiative(null)}
+                            className="ml-4 p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
+                            title="Clear initiative filter"
+                          >
+                            <X className="w-5 h-5 text-white" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div 
+                    key={`projects-grid-${gridPage}`}
+                    className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-[18px] mb-0" 
+                    style={{
+                    animation: 'fadeIn 0.3s ease-in-out',
+                    gridAutoRows: 'auto',
+                    overflow: 'visible'
+                    }}
+                  >
+                    {/* In grid view, API already returns paginated data, so display directly */}
+                    {allProjects.map((proj, idx) => (
+                      <MemoizedProjectCard 
+                        key={proj.slug}
+                        proj={proj}
+                        onClick={() => {
+                          setLayoutView('detail');
+                          navigate(`/projects/${proj.slug}`);
+                        }}
+                      />
+                    ))}
+                  </div>
+                </>
               )}
 
             {/* Mobile Navigation - Bottom Fixed for Projects Grid */}
@@ -2901,6 +2998,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                   } else {
                     setProjectFilters({ search: '', skills: [], sectors: [] });
                     setProjectSearchInput('');
+                    setSelectedInitiative(null);
                     // Navigate to first project after clearing filters
                     if (allProjects.length > 0) {
                       navigate(`/projects/${allProjects[0].slug}`);
@@ -3246,8 +3344,8 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                     <div className="flex gap-2">
                       {project.github_url && (
                         <a href={project.github_url} target="_blank" rel="noopener noreferrer">
-                          <Button variant="outline" size="icon">
-                            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                          <Button variant="outline" size="icon" className="bg-white hover:bg-gray-200">
+                            <svg className="h-4 w-4 text-black" viewBox="0 0 24 24" fill="currentColor">
                               <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
                             </svg>
                           </Button>
