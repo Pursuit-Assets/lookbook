@@ -26,19 +26,26 @@ https://lookbook.pursuit.org/projects/filter/{initiative-slug}
      - Applies the filter automatically
      - Displays only projects from that initiative/cohort
 
-2. **Filter Persistence**
+2. **No Pagination for Initiative Filters**
+   - Initiative filter views show **all projects** without pagination
+   - Projects are displayed in a grid layout (same as other views)
+   - This works better with the initiative description banner at the top
+   - Regular project browsing (without initiative filter) still uses pagination
+
+3. **Filter Persistence**
    - The filter remains active while navigating between projects within the filtered view
    - The URL stays as `/projects/filter/{slug}` to maintain shareability
    - Filters are preserved even when refreshing the page
 
-3. **Clearing Filters**
+4. **Clearing Filters**
    - Clicking "Clear Filters" navigates back to `/projects` (unfiltered view)
    - Clicking the X button on the initiative badge navigates back to `/projects`
    - Deselecting an initiative in the sidebar navigates back to `/projects`
 
-4. **Filter UI Indication**
+5. **Filter UI Indication**
    - When a filter is active via URL, the initiative button in the sidebar is highlighted
    - A badge appears at the top showing the active initiative with an X to clear
+   - Pagination controls are hidden (since all projects are shown)
    - The project count reflects only filtered projects
 
 ## Implementation Details
@@ -68,6 +75,24 @@ if (filterSlug && viewMode === 'projects') {
     setSelectedInitiative(matchingInitiative.slug);
   }
 }
+```
+
+#### Pagination Control
+Initiative filter URLs disable pagination and fetch all projects:
+```javascript
+const shouldPaginate = !isFilterUrl || viewMode !== 'projects';
+const pageSize = 8;
+const offset = shouldPaginate ? gridPage * pageSize : 0;
+const limit = shouldPaginate ? pageSize : 100; // Fetch all for initiative filters
+```
+
+Pagination UI is hidden on initiative filter URLs:
+```javascript
+{viewMode === 'projects' && !isFilterUrl && (
+  <div className="flex items-center">
+    {/* Pagination controls */}
+  </div>
+)}
 ```
 
 #### Navigation on Filter Selection
@@ -185,5 +210,6 @@ To test the feature:
 - Added `/projects/filter/:filterSlug` route
 - Automatic filter application from URL parameters
 - Navigation updates when selecting/clearing filters
+- Removed pagination for initiative filter views (show all projects)
 - Documentation created
 
