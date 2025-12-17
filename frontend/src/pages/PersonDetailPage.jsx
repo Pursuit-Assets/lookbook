@@ -845,15 +845,18 @@ function PersonDetailPage() {
       }
       
       if (layoutView === 'grid') {
-        // Grid view: fetch paginated data (8 per page)
+        // Grid view: fetch paginated data (8 per page) OR all data for initiative filters
+        // When on an initiative filter URL, show all projects without pagination
+        const shouldPaginate = !isFilterUrl || viewMode !== 'projects';
         const pageSize = 8;
-        const offset = gridPage * pageSize;
+        const offset = shouldPaginate ? gridPage * pageSize : 0;
+        const limit = shouldPaginate ? pageSize : 100; // Fetch all for initiative filters
         
         if (viewMode === 'people') {
           try {
             setLoadingProgress(30);
             const response = await profilesAPI.getAll({
-              limit: pageSize,
+              limit,
               offset,
               search: debouncedPeopleSearch,
               skills: peopleFilters.skills.length > 0 ? peopleFilters.skills : undefined,
@@ -892,7 +895,7 @@ function PersonDetailPage() {
               : undefined;
             
             const response = await projectsAPI.getAll({
-              limit: pageSize,
+              limit,
               offset,
               search: debouncedProjectSearch,
               skills: projectFilters.skills.length > 0 ? projectFilters.skills : undefined,
@@ -1825,7 +1828,7 @@ function PersonDetailPage() {
             {/* Page indicator with navigation - left-aligned */}
             {layoutView === 'grid' && (
               <>
-                {viewMode === 'projects' && (
+                {viewMode === 'projects' && !isFilterUrl && (
                   <div className="flex items-center">
                     <button
                       onClick={() => setGridPage(Math.max(0, gridPage - 1))}
@@ -2615,8 +2618,8 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                 </>
               )}
 
-            {/* Mobile Navigation - Bottom Fixed for Projects Grid */}
-            {(
+            {/* Mobile Navigation - Bottom Fixed for Projects Grid - Hide on initiative filter URLs */}
+            {!isFilterUrl && (
             <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white z-50 px-4 py-3 flex items-center justify-center shadow-lg">
               <button
                 onClick={() => setGridPage(Math.max(0, gridPage - 1))}
