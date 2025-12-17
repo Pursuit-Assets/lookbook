@@ -33,6 +33,7 @@ function App() {
           <Route path="/people" element={<PersonDetailPage />} />
           <Route path="/people/:slug" element={<PersonDetailPage />} />
           <Route path="/projects" element={<PersonDetailPage />} />
+          <Route path="/projects/filter/:filterSlug" element={<PersonDetailPage />} />
           <Route path="/projects/:slug" element={<PersonDetailPage />} />
           <Route path="/search" element={<SearchPage />} />
           <Route path="/share" element={<SharePage />} />

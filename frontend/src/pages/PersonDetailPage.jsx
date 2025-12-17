@@ -605,9 +605,12 @@ const MemoizedProjectCard = memo(ProjectCard, (prevProps, nextProps) => {
 // Initiative definitions will be fetched from API
 
 function PersonDetailPage() {
-  const { slug } = useParams();
+  const { slug, filterSlug } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  
+  // Check if we're on a filter URL
+  const isFilterUrl = location.pathname.includes('/filter/');
   // Initialize viewMode based on current URL path immediately
   const initialViewMode = location.pathname.startsWith('/projects') ? 'projects' : 'people';
   const [person, setPerson] = useState(null);
@@ -643,7 +646,9 @@ function PersonDetailPage() {
     setFilterView(newViewMode);
     
     // Clear filters when switching between people and projects
-    if (wasPeople !== isPeople) {
+    // BUT: Don't clear if we're on a filter URL (e.g., /projects/filter/smb-winter-2025)
+    const isCurrentFilterUrl = location.pathname.includes('/filter/');
+    if (wasPeople !== isPeople && !isCurrentFilterUrl) {
       // Switching between people and projects - reset everything including filters
       setError(null);
       setPerson(null);
@@ -660,7 +665,8 @@ function PersonDetailPage() {
     
     // Clear filters when navigating back to people/projects from another section
     // Skip on initial mount to avoid clearing filters on first load
-    if (!isInitialMountRef.current && !wasInPeopleOrProjectsBefore && isPeopleOrProjectsRoute) {
+    // BUT: Don't clear if we're on a filter URL
+    if (!isInitialMountRef.current && !wasInPeopleOrProjectsBefore && isPeopleOrProjectsRoute && !isCurrentFilterUrl) {
       // Coming back to people/projects section - clear filters
       if (isPeople) {
         setPeopleFilters({ search: '', skills: [], industries: [], openToWork: false });
@@ -1015,7 +1021,16 @@ function PersonDetailPage() {
           setAvailableProjectFilters({ skills: [], sectors: [] });
         }
         if (initiativesData && initiativesData.success) {
-          setInitiatives(initiativesData.data || []);
+          const loadedInitiatives = initiativesData.data || [];
+          setInitiatives(loadedInitiatives);
+          
+          // If we have a filterSlug in the URL, apply it automatically
+          if (filterSlug && viewMode === 'projects') {
+            const matchingInitiative = loadedInitiatives.find(i => i.slug === filterSlug);
+            if (matchingInitiative) {
+              setSelectedInitiative(matchingInitiative.slug);
+            }
+          }
         } else {
           console.error('Failed to fetch initiatives:', initiativesData);
           setInitiatives([]);
@@ -1028,7 +1043,7 @@ function PersonDetailPage() {
       }
     };
     fetchFilters();
-  }, []); // Run once on mount
+  }, [filterSlug, viewMode]); // Re-run if filterSlug changes
 
   useEffect(() => {
     // If no slug, default to grid view
@@ -2385,9 +2400,13 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                             key={initiative.slug}
                             onClick={() => {
                               if (selectedInitiative === initiative.slug) {
+                                // Deselecting - navigate to base projects page
                                 setSelectedInitiative(null);
+                                navigate('/projects');
                               } else {
+                                // Selecting - navigate to filter URL
                                 setSelectedInitiative(initiative.slug);
+                                navigate(`/projects/filter/${initiative.slug}`);
                                 // Track initiative selection
                                 analytics.filterApplied('initiative', initiative.name, 'projects');
                               }
@@ -2558,7 +2577,10 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                             </p>
                           </div>
                           <button
-                            onClick={() => setSelectedInitiative(null)}
+                            onClick={() => {
+                              setSelectedInitiative(null);
+                              navigate('/projects');
+                            }}
                             className="ml-4 p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
                             title="Clear initiative filter"
                           >
@@ -3056,8 +3078,11 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                     setProjectFilters({ search: '', skills: [], sectors: [] });
                     setProjectSearchInput('');
                     setSelectedInitiative(null);
-                    // Navigate to first project after clearing filters
-                    if (allProjects.length > 0) {
+                    // Navigate to base projects page when clearing filters
+                    if (isFilterUrl) {
+                      navigate('/projects');
+                    } else if (allProjects.length > 0) {
+                      // Navigate to first project after clearing filters
                       navigate(`/projects/${allProjects[0].slug}`);
                     }
                   }
