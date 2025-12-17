@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { Linkedin, Globe, Camera, Code, Rocket, Zap, Lightbulb, Target, Square, Grid3x3, List, ChevronLeft, ChevronRight, Menu, X, Frown, Search } from 'lucide-react';
+import { Linkedin, Globe, Camera, Code, Rocket, Zap, Lightbulb, Target, Square, Grid3x3, List, ChevronLeft, ChevronRight, Menu, X, Frown, Search, Building2, Briefcase, Store, Sparkles, Sprout } from 'lucide-react';
 
 // Custom hook for debounced value
 const useDebounce = (value, delay) => {
@@ -514,24 +514,70 @@ const ProjectCard = ({ proj, onClick }) => {
               <p className="text-white leading-snug mb-2" style={{fontSize: '14px', textShadow: '0 1px 2px rgba(0,0,0,0.5)'}}>{proj.short_description}</p>
             )}
             
-            {/* Project Partner */}
-            {proj.has_partner && (proj.partner_logo_url || proj.partner_name) && (
-              <div className="mt-3 flex items-center gap-2">
-                <span className="text-white text-xs opacity-75">Project Partner</span>
-                {proj.partner_logo_url ? (
-                  <img 
-                    src={getImageUrl(proj.partner_logo_url)}
-                    alt={proj.partner_name || 'Partner'}
-                    className="h-5 object-contain"
-                    style={{
-                      filter: 'brightness(0) invert(1)',
-                      maxWidth: '120px'
-                    }}
-                  />
-                ) : (
-                  <span className="text-white text-xs font-semibold">{proj.partner_name}</span>
-                )}
+            {/* SMB Initiative Badge + Project Partner - Card View */}
+            {proj.cohort === 'SMB Winter 2025' ? (
+              <div className="mt-3 mb-2">
+                <div className="flex items-start gap-2">
+                  {/* Sprout Icon */}
+                  <div className="flex-shrink-0">
+                    <div className="flex items-center justify-center w-9 h-9 rounded-full"
+                         style={{
+                           backgroundColor: 'rgba(16, 185, 129, 0.9)',
+                           backdropFilter: 'blur(10px)',
+                           boxShadow: '0 2px 4px rgba(0, 0, 0, 0.15)'
+                         }}>
+                      <Sprout size={16} color="white" strokeWidth={2} />
+                    </div>
+                  </div>
+                  
+                  {/* Text and Partner Info */}
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-xs font-semibold text-white opacity-90">SMB Initiative</span>
+                    
+                    {/* Client */}
+                    {proj.has_partner && (proj.partner_logo_url || proj.partner_name) && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-white text-xs opacity-75">Client:</span>
+                        {proj.partner_logo_url ? (
+                          <img 
+                            src={getImageUrl(proj.partner_logo_url)}
+                            alt={proj.partner_name || 'Client'}
+                            className="h-5 object-contain"
+                            style={{
+                              filter: 'brightness(0) invert(1)',
+                              maxWidth: '120px'
+                            }}
+                          />
+                        ) : (
+                          <span className="text-white text-xs font-semibold">{proj.partner_name}</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
+            ) : (
+              <>
+                {/* Non-SMB projects: Regular Project Partner Section */}
+                {proj.has_partner && (proj.partner_logo_url || proj.partner_name) && (
+                  <div className="mt-3 flex items-center gap-2">
+                    <span className="text-white text-xs opacity-75">Project Partner</span>
+                    {proj.partner_logo_url ? (
+                      <img 
+                        src={getImageUrl(proj.partner_logo_url)}
+                        alt={proj.partner_name || 'Partner'}
+                        className="h-5 object-contain"
+                        style={{
+                          filter: 'brightness(0) invert(1)',
+                          maxWidth: '120px'
+                        }}
+                      />
+                    ) : (
+                      <span className="text-white text-xs font-semibold">{proj.partner_name}</span>
+                    )}
+                  </div>
+                )}
+              </>
             )}
           </div>
           
@@ -576,13 +622,13 @@ const ProjectCard = ({ proj, onClick }) => {
               <div className="flex flex-wrap gap-1">
               {proj.sectors && proj.sectors.length > 0 ? (
                   proj.sectors.map((sector, i) => (
-                    <span key={i} className="text-xs px-2 py-1 rounded-full bg-purple-600 text-white font-semibold uppercase">
+                    <span key={i} className="px-1.5 py-0.5 rounded-full bg-purple-600 text-white font-semibold uppercase" style={{fontSize: '10px'}}>
                       {sector}
                   </span>
                   ))
               ) : proj.skills && proj.skills.length > 0 ? (
                   proj.skills.slice(0, 2).map((skill, i) => (
-                    <span key={i} className="text-xs px-2 py-1 rounded-full bg-blue-600 text-white font-semibold">
+                    <span key={i} className="px-1.5 py-0.5 rounded-full bg-blue-600 text-white font-semibold" style={{fontSize: '10px'}}>
                       {skill}
                   </span>
                   ))
@@ -3391,39 +3437,99 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                     <div>
                       <h1 className="font-bold uppercase tracking-tight mb-2 text-2xl md:text-3xl" style={{fontFamily: "'Galano Grotesque', sans-serif"}}>{project.title}</h1>
                       
-                      {/* Project Partner Section */}
-                      {project.has_partner && (project.partner_logo_url || project.partner_name) && (
-                        <div className="mt-6 mb-2">
-                          {project.partner_logo_url ? (
-                            <>
-                              <div className="mb-2">
-                                <img 
-                                  src={getImageUrl(project.partner_logo_url)} 
-                                  alt={project.partner_name || 'Partner logo'} 
-                                  className="max-h-12 object-contain"
-                                  style={{ maxWidth: '180px' }}
-                                />
+                      {/* SMB Initiative Badge + Project Partner Section (combined for SMB projects) */}
+                      {project.cohort === 'SMB Winter 2025' ? (
+                        <div className="mt-4 mb-3">
+                          <div className="flex items-start gap-3">
+                            {/* Sprout Icon */}
+                            <div className="flex-shrink-0">
+                              <div className="flex items-center justify-center w-10 h-10 rounded-full"
+                                   style={{
+                                     backgroundColor: '#10b981',
+                                     boxShadow: '0 2px 4px rgba(16, 185, 129, 0.2)'
+                                   }}>
+                                <Sprout size={18} color="white" strokeWidth={2} />
                               </div>
-                              <div className="text-xs text-gray-600 uppercase tracking-wide">
-                                <span className="font-bold">Project Partner</span>
-                                {project.partner_name && (
-                                  <span className="ml-2">{project.partner_name}</span>
-                                )}
-                              </div>
-                            </>
-                          ) : (
-                            <>
-                              <div className="mb-2">
-                                <div className="text-2xl font-bold text-gray-900">
-                                  {project.partner_name}
+                            </div>
+                            
+                            {/* Text and Partner Info */}
+                            <div className="flex flex-col gap-1">
+                              <span className="text-xs font-semibold text-gray-600">SMB Initiative</span>
+                              
+                              {/* Client Section */}
+                              {project.has_partner && (project.partner_logo_url || project.partner_name) && (
+                                <div>
+                                  {project.partner_logo_url ? (
+                                    <>
+                                      <div className="mb-2">
+                                        <img 
+                                          src={getImageUrl(project.partner_logo_url)} 
+                                          alt={project.partner_name || 'Client logo'} 
+                                          className="max-h-12 object-contain"
+                                          style={{ maxWidth: '180px' }}
+                                        />
+                                      </div>
+                                      <div className="text-xs text-gray-600 uppercase tracking-wide">
+                                        <span className="font-bold">Client:</span>
+                                        {project.partner_name && (
+                                          <span className="ml-2">{project.partner_name}</span>
+                                        )}
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <div className="mb-2">
+                                        <div className="text-2xl font-bold text-gray-900">
+                                          {project.partner_name}
+                                        </div>
+                                      </div>
+                                      <div className="text-xs text-gray-600 uppercase tracking-wide font-bold">
+                                        Client:
+                                      </div>
+                                    </>
+                                  )}
                                 </div>
-                              </div>
-                              <div className="text-xs text-gray-600 uppercase tracking-wide font-bold">
-                                Project Partner
-                              </div>
-                            </>
-                          )}
+                              )}
+                            </div>
+                          </div>
                         </div>
+                      ) : (
+                        <>
+                          {/* Non-SMB projects: Regular Project Partner Section */}
+                          {project.has_partner && (project.partner_logo_url || project.partner_name) && (
+                            <div className="mt-6 mb-2">
+                              {project.partner_logo_url ? (
+                                <>
+                                  <div className="mb-2">
+                                    <img 
+                                      src={getImageUrl(project.partner_logo_url)} 
+                                      alt={project.partner_name || 'Partner logo'} 
+                                      className="max-h-12 object-contain"
+                                      style={{ maxWidth: '180px' }}
+                                    />
+                                  </div>
+                                  <div className="text-xs text-gray-600 uppercase tracking-wide">
+                                    <span className="font-bold">Project Partner</span>
+                                    {project.partner_name && (
+                                      <span className="ml-2">{project.partner_name}</span>
+                                    )}
+                                  </div>
+                                </>
+                              ) : (
+                                <>
+                                  <div className="mb-2">
+                                    <div className="text-2xl font-bold text-gray-900">
+                                      {project.partner_name}
+                                    </div>
+                                  </div>
+                                  <div className="text-xs text-gray-600 uppercase tracking-wide font-bold">
+                                    Project Partner
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                     <div className="flex gap-2">
