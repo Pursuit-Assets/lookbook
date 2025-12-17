@@ -40,14 +40,23 @@ const corsOptions = {
       }
     }
     
-    // In production, only allow the configured frontend URL
+    // In production, allow configured frontend URL(s) and Render preview URLs
     const allowedOrigins = process.env.FRONTEND_URL ? 
       process.env.FRONTEND_URL.split(',') : 
       ['http://localhost:5175', 'http://localhost:5176'];
     
+    // Also allow any .onrender.com domain in production (for Render deployments)
+    if (process.env.NODE_ENV === 'production' && origin && origin.includes('.onrender.com')) {
+      return callback(null, true);
+    }
+    
     if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
+      // Log rejected origins in production for debugging
+      if (process.env.NODE_ENV === 'production') {
+        console.log('CORS rejected origin:', origin);
+      }
       callback(new Error('Not allowed by CORS'));
     }
   },
