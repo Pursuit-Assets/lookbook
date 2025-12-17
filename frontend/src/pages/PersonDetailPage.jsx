@@ -379,18 +379,54 @@ const ProjectCard = ({ proj, onClick }) => {
         style={{backgroundColor: 'white', aspectRatio: '3/4'}}
         onClick={onClick}
       >
-        {/* Background Image or Color */}
-        {proj.main_image_url ? (
+        {/* Background Video or Image or Color */}
+        {proj.card_background_video_url ? (
+          <div className="absolute inset-0 z-0">
+            <video
+              src={proj.card_background_video_url}
+              className="w-full h-full object-cover opacity-90"
+              autoPlay
+              muted
+              loop
+              playsInline
+            />
+            {/* Gradient Overlay */}
+            <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/60 to-black/80"></div>
+            
+            {/* Holographic Effect Overlay - Enhanced for featured */}
+            <div className={`holo-effect ${isFeatured ? 'featured' : ''} absolute inset-0 opacity-0 hover:opacity-30 transition-opacity duration-300 pointer-events-none`}></div>
+            
+            {/* Ultra Premium effects - Only for featured cards */}
+            {isFeatured && (
+              <>
+                {/* Foil texture */}
+                <div className="foil-texture"></div>
+                
+                {/* Sparkle particles */}
+                <div className="sparkle" style={{zIndex: 20}}></div>
+                <div className="sparkle" style={{zIndex: 20}}></div>
+                <div className="sparkle" style={{zIndex: 20}}></div>
+                <div className="sparkle" style={{zIndex: 20}}></div>
+                <div className="sparkle" style={{zIndex: 20}}></div>
+                
+                {/* Reflection effect */}
+                <div className="reflection-effect"></div>
+              </>
+            )}
+          </div>
+        ) : (proj.card_background_url || proj.main_image_url) ? (
           <div className="absolute inset-0 z-0">
             <img 
               src={getImageUrl((() => {
+                // Use card_background_url if available, otherwise use main_image_url
+                const imageUrl = proj.card_background_url || proj.main_image_url;
                 try {
-                  const images = JSON.parse(proj.main_image_url);
+                  const images = JSON.parse(imageUrl);
                   if (Array.isArray(images)) {
                     return typeof images[0] === 'string' ? images[0] : images[0].url;
                   }
                 } catch {}
-                return proj.main_image_url;
+                return imageUrl;
               })())}
               alt={proj.title}
               className="w-full h-full object-cover opacity-90"
@@ -720,43 +756,45 @@ function PersonDetailPage() {
     return true;
   }), [allProfiles, debouncedPeopleSearch, peopleFilters.skills, peopleFilters.industries, peopleFilters.openToWork]);
 
-  const filteredProjects = useMemo(() => allProjects.filter(project => {
-    // Initiative filter (cohort-based)
-    if (selectedInitiative) {
-      const initiative = initiatives.find(i => i.slug === selectedInitiative);
-      if (initiative && project.cohort !== initiative.cohort_value) {
-        return false;
+  const filteredProjects = useMemo(() => {
+    return allProjects.filter(project => {
+      // Initiative filter (cohort-based)
+      if (selectedInitiative) {
+        const initiative = initiatives.find(i => i.slug === selectedInitiative);
+        if (initiative && project.cohort !== initiative.cohort_value) {
+          return false;
+        }
       }
-    }
-    
-    // Search filter (using debounced value)
-    if (debouncedProjectSearch) {
-      const searchLower = debouncedProjectSearch.toLowerCase();
-      const matchesTitle = project.title?.toLowerCase().includes(searchLower);
-      const matchesSummary = project.summary?.toLowerCase().includes(searchLower);
-      const matchesDescription = project.short_description?.toLowerCase().includes(searchLower);
-      const matchesSkills = project.skills?.some(skill => skill.toLowerCase().includes(searchLower));
-      if (!matchesTitle && !matchesSummary && !matchesDescription && !matchesSkills) return false;
-    }
-    
-    // Skills filter
-    if (projectFilters.skills.length > 0) {
-      const hasSkill = projectFilters.skills.some(filterSkill => 
-        project.skills?.includes(filterSkill)
-      );
-      if (!hasSkill) return false;
-    }
-    
-    // Sectors filter
-    if (projectFilters.sectors.length > 0) {
-      const hasSector = projectFilters.sectors.some(filterSector => 
-        project.sectors?.includes(filterSector)
-      );
-      if (!hasSector) return false;
-    }
-    
-    return true;
-  }), [allProjects, debouncedProjectSearch, projectFilters.skills, projectFilters.sectors, selectedInitiative, initiatives]);
+      
+      // Search filter (using debounced value)
+      if (debouncedProjectSearch) {
+        const searchLower = debouncedProjectSearch.toLowerCase();
+        const matchesTitle = project.title?.toLowerCase().includes(searchLower);
+        const matchesSummary = project.summary?.toLowerCase().includes(searchLower);
+        const matchesDescription = project.short_description?.toLowerCase().includes(searchLower);
+        const matchesSkills = project.skills?.some(skill => skill.toLowerCase().includes(searchLower));
+        if (!matchesTitle && !matchesSummary && !matchesDescription && !matchesSkills) return false;
+      }
+      
+      // Skills filter
+      if (projectFilters.skills.length > 0) {
+        const hasSkill = projectFilters.skills.some(filterSkill => 
+          project.skills?.includes(filterSkill)
+        );
+        if (!hasSkill) return false;
+      }
+      
+      // Sectors filter
+      if (projectFilters.sectors.length > 0) {
+        const hasSector = projectFilters.sectors.some(filterSector => 
+          project.sectors?.includes(filterSector)
+        );
+        if (!hasSector) return false;
+      }
+      
+      return true;
+    });
+  }, [allProjects, debouncedProjectSearch, projectFilters.skills, projectFilters.sectors, selectedInitiative, initiatives]);
 
   // Filter person's projects - always show all projects for that person
   // Filters don't affect the "Select Projects" section on person detail pages
@@ -774,7 +812,7 @@ function PersonDetailPage() {
   // Reset to first page when filters or search changes
   useEffect(() => {
     setGridPage(0);
-  }, [peopleFilters.skills, peopleFilters.industries, peopleFilters.openToWork, projectFilters.skills, projectFilters.sectors, debouncedPeopleSearch, debouncedProjectSearch]);
+  }, [peopleFilters.skills, peopleFilters.industries, peopleFilters.openToWork, projectFilters.skills, projectFilters.sectors, debouncedPeopleSearch, debouncedProjectSearch, selectedInitiative]);
 
   // Reset carousel index when filtered person projects change
   useEffect(() => {
@@ -842,12 +880,18 @@ function PersonDetailPage() {
         } else if (viewMode === 'projects') {
           try {
             setLoadingProgress(30);
+            // Get cohort value from selected initiative for filtering
+            const cohortFilter = selectedInitiative 
+              ? initiatives.find(i => i.slug === selectedInitiative)?.cohort_value 
+              : undefined;
+            
             const response = await projectsAPI.getAll({
               limit: pageSize,
               offset,
               search: debouncedProjectSearch,
               skills: projectFilters.skills.length > 0 ? projectFilters.skills : undefined,
-              sectors: projectFilters.sectors.length > 0 ? projectFilters.sectors : undefined
+              sectors: projectFilters.sectors.length > 0 ? projectFilters.sectors : undefined,
+              cohort: cohortFilter
             });
             
             setLoadingProgress(80);
@@ -905,11 +949,17 @@ function PersonDetailPage() {
         } else if (viewMode === 'projects') {
           try {
             setLoadingProgress(30);
+            // Get cohort value from selected initiative for filtering
+            const cohortFilter = selectedInitiative 
+              ? initiatives.find(i => i.slug === selectedInitiative)?.cohort_value 
+              : undefined;
+            
             const response = await projectsAPI.getAll({
               limit: 100,
               search: debouncedProjectSearch,
               skills: projectFilters.skills.length > 0 ? projectFilters.skills : undefined,
-              sectors: projectFilters.sectors.length > 0 ? projectFilters.sectors : undefined
+              sectors: projectFilters.sectors.length > 0 ? projectFilters.sectors : undefined,
+              cohort: cohortFilter
             });
             
             setLoadingProgress(80);
@@ -940,7 +990,7 @@ function PersonDetailPage() {
       isMounted = false;
       isFetchingRef.current = false;
     };
-  }, [gridPage, viewMode, debouncedPeopleSearch, debouncedProjectSearch, peopleFilters.skills, peopleFilters.industries, peopleFilters.openToWork, projectFilters.skills, projectFilters.sectors, layoutView]);
+  }, [gridPage, viewMode, debouncedPeopleSearch, debouncedProjectSearch, peopleFilters.skills, peopleFilters.industries, peopleFilters.openToWork, projectFilters.skills, projectFilters.sectors, layoutView, selectedInitiative, initiatives]);
 
   // Fetch filters and initiatives once on mount - these are cached
   useEffect(() => {
@@ -1142,13 +1192,19 @@ function PersonDetailPage() {
           // Fetch both in parallel
           // In detail view, fetch filtered data from API (like grid/list) for navigation
           // This uses server-side filtering and avoids client-side filtering conflicts
+          // Get cohort value from selected initiative for filtering
+          const cohortFilter = selectedInitiative 
+            ? initiatives.find(i => i.slug === selectedInitiative)?.cohort_value 
+            : undefined;
+          
           const [projectData, listData] = await Promise.all([
             projectsAPI.getBySlug(slug),
             projectsAPI.getAll({
               limit: 100,
               search: debouncedProjectSearch || undefined,
               skills: projectFilters.skills.length > 0 ? projectFilters.skills : undefined,
-              sectors: projectFilters.sectors.length > 0 ? projectFilters.sectors : undefined
+              sectors: projectFilters.sectors.length > 0 ? projectFilters.sectors : undefined,
+              cohort: cohortFilter
             })
           ]);
           
@@ -1229,7 +1285,7 @@ function PersonDetailPage() {
     } else {
       setLoading(false);
     }
-  }, [slug, viewMode, debouncedPeopleSearch, debouncedProjectSearch, peopleFilters.skills, peopleFilters.industries, peopleFilters.openToWork, projectFilters.skills, projectFilters.sectors]);
+  }, [slug, viewMode, debouncedPeopleSearch, debouncedProjectSearch, peopleFilters.skills, peopleFilters.industries, peopleFilters.openToWork, projectFilters.skills, projectFilters.sectors, selectedInitiative, initiatives]);
 
   // Update currentIndex when slug or list changes
   // Since allProfiles/allProjects are now filtered from API, we just need to find the index
@@ -1268,7 +1324,8 @@ function PersonDetailPage() {
     const updateScrollbar = () => {
       // Check if we're in grid view, 4-column layout (2xl breakpoint), and have exactly 8 items
       const is4ColumnView = window.innerWidth >= 1536; // 2xl breakpoint
-      const itemCount = viewMode === 'people' ? allProfiles.length : allProjects.length;
+      // Use total count from API, not filtered array length (which may be paginated)
+      const itemCount = viewMode === 'people' ? totalProfiles : totalProjects;
       const isPerfect4x2 = layoutView === 'grid' && is4ColumnView && itemCount === 8;
       
       // Apply synchronously before browser paints to prevent flash
@@ -1300,7 +1357,7 @@ function PersonDetailPage() {
       document.body.style.overflowY = '';
       document.documentElement.style.overflowY = '';
     };
-  }, [layoutView, viewMode, allProfiles.length, allProjects.length]);
+  }, [layoutView, viewMode, totalProfiles, totalProjects]);
 
   // Prefetch adjacent items for instant navigation
   useEffect(() => {
@@ -1468,7 +1525,7 @@ function PersonDetailPage() {
   const initials = person?.name?.split(' ').map(n => n.charAt(0)).join('') || project?.title?.charAt(0) || '?';
 
   return (
-    <div className={`flex ${layoutView === 'grid' ? 'grid-view-page' : ''}`} style={{backgroundColor: '#e3e3e3', width: '100%', maxWidth: '100vw', overflowX: 'hidden', minHeight: '100vh'}}>
+    <div className="flex" style={{backgroundColor: '#e3e3e3', width: '100%', maxWidth: '100vw', overflowX: 'hidden', minHeight: '100vh'}}>
       {/* Logo - Top Left - Fixed */}
       <div className="fixed left-2 lg:left-5 top-2 lg:top-4 z-50">
         <a href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity cursor-pointer">
@@ -1522,9 +1579,9 @@ function PersonDetailPage() {
           }}
         >
           <div 
-            className="absolute top-1/2 -translate-y-1/2 pointer-events-none transition-all duration-300 ease-in-out"
+            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none transition-all duration-300 ease-in-out"
             style={{ 
-              left: searchHovered && !searchFocused ? '10px' : '7.5px', // Center in square (40px - 25px) / 2 = 7.5px
+              marginLeft: searchHovered && !searchFocused ? '10px' : '0', 
               opacity: (searchFocused || searchCommitted) ? 0 : 1,
               zIndex: 1
             }}
@@ -1540,8 +1597,8 @@ function PersonDetailPage() {
               className="absolute pointer-events-none whitespace-nowrap text-base md:text-sm"
               style={{
                 top: '50%',
-                left: '45px', // 10px (icon left) + 25px (icon width) + 10px (gap) = 45px
-                transform: 'translateY(-50%)',
+                left: '50%',
+                transform: 'translate(calc(-50% + 22.5px), -50%)', // 22.5px = (25px icon + 20px gap) / 2
                 color: '#d1d5db',
                 fontSize: '16px',
                 zIndex: 10,
@@ -1929,9 +1986,9 @@ function PersonDetailPage() {
               }}
             >
               <div 
-                className="absolute top-1/2 -translate-y-1/2 pointer-events-none transition-all duration-300 ease-in-out"
+                className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none transition-all duration-300 ease-in-out"
                 style={{ 
-                  left: searchHovered && !searchFocused ? '10px' : '7.5px', // Center in square (40px - 25px) / 2 = 7.5px
+                  marginLeft: searchHovered && !searchFocused ? '10px' : '0',
                   opacity: (searchFocused || searchCommitted) ? 0 : 1,
                   zIndex: 1
                 }}
@@ -1947,8 +2004,8 @@ function PersonDetailPage() {
                   className="absolute pointer-events-none whitespace-nowrap text-base md:text-sm"
                   style={{
                     top: '50%',
-                    left: '45px', // 10px (icon left) + 25px (icon width) + 10px (gap) = 45px
-                    transform: 'translateY(-50%)',
+                    left: '50%',
+                    transform: 'translate(calc(-50% + 22.5px), -50%)', // 22.5px = (25px icon + 20px gap) / 2
                     color: '#d1d5db',
                     fontSize: '16px',
                     zIndex: 10,
@@ -2160,11 +2217,11 @@ function PersonDetailPage() {
       <div className={`fixed left-0 lg:left-5 top-0 lg:top-20 z-50 transition-transform duration-300 ${
 mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
       } lg:block`}>
-        <aside style={{backgroundColor: '#e3e3e3'}} className="w-72 lg:w-60 h-screen lg:h-auto lg:rounded-xl overflow-y-auto border-r-2 lg:border-2 border-white lg:max-h-[calc(100vh-10rem)] pt-14 lg:pt-4 pb-20 lg:pb-0">
+        <aside style={{backgroundColor: '#e3e3e3'}} className="w-72 lg:w-60 h-screen lg:h-auto lg:rounded-xl border-r-2 lg:border-2 border-white lg:max-h-[calc(100vh-10rem)] pt-14 lg:pt-4 pb-20 lg:pb-0 overflow-hidden">
           <div className="flex flex-col h-full">
 
           {/* Filter Content */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 pt-0">
+          <div className="flex-1 p-4 space-y-4 pt-0 overflow-y-auto">
               {/* Tabs */}
               <div className="flex gap-1 border-b">
                 <button
@@ -2196,7 +2253,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <h4 className="text-sm">Skills</h4>
-                    <div className="space-y-2 max-h-40 overflow-y-auto">
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
                       {availablePeopleFilters.skills.length > 0 ? (
                         availablePeopleFilters.skills.map(skill => (
                         <div 
@@ -2236,7 +2293,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
 
                   <div className="space-y-2">
                     <h4 className="text-sm">Industries</h4>
-                    <div className="space-y-2 max-h-40 overflow-y-auto">
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
                       {availablePeopleFilters.industries.length > 0 ? (
                         availablePeopleFilters.industries.map(industry => (
                         <div 
@@ -2352,7 +2409,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
 
                   <div className="space-y-2">
                     <h4 className="text-sm">Technologies</h4>
-                    <div className="space-y-2 max-h-40 overflow-y-auto">
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
                       {availableProjectFilters.skills.map(skill => (
                         <div 
                           key={skill} 
@@ -2388,7 +2445,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
 
                   <div className="space-y-2">
                     <h4 className="text-sm">Industries</h4>
-                    <div className="space-y-2 max-h-96 overflow-y-auto">
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
                       {availableProjectFilters.sectors.map(sector => (
                         <div 
                           key={sector} 
@@ -2521,8 +2578,8 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                     overflow: 'visible'
                     }}
                   >
-                    {/* In grid view, API already returns paginated data, so display directly */}
-                    {allProjects.map((proj, idx) => (
+                    {/* In grid view, apply client-side filters */}
+                    {filteredProjects.map((proj, idx) => (
                       <MemoizedProjectCard 
                         key={proj.slug}
                         proj={proj}
@@ -2622,8 +2679,8 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                   overflow: 'visible'
                   }}
                 >
-                  {/* In grid view, API already returns paginated data, so display directly */}
-                  {allProfiles.map((prof, idx) => (
+                  {/* In grid view, apply client-side filters */}
+                  {filteredProfiles.map((prof, idx) => (
                     <MemoizedProfileCard 
                       key={prof.slug}
                       prof={prof}

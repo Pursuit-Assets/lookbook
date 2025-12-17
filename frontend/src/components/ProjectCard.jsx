@@ -2,13 +2,29 @@ import { Link } from 'react-router-dom';
 import './ProjectCard.css';
 
 function ProjectCard({ project }) {
+  // Priority: video > card background image > main image
+  const cardVideoUrl = project.card_background_video_url;
+  const cardImageUrl = project.card_background_url || project.main_image_url;
+  
   return (
     <Link to={`/projects/${project.slug}`} className="project-card">
-      {project.main_image_url && (
+      {cardVideoUrl ? (
         <div className="project-card__image">
-          <img src={project.main_image_url} alt={project.title} />
+          <video 
+            src={cardVideoUrl} 
+            alt={project.title}
+            autoPlay
+            muted
+            loop
+            playsInline
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          />
         </div>
-      )}
+      ) : cardImageUrl ? (
+        <div className="project-card__image">
+          <img src={cardImageUrl} alt={project.title} />
+        </div>
+      ) : null}
       
       <div className="project-card__body">
         <h3 className="project-card__title">{project.title}</h3>

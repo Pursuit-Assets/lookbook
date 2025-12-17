@@ -292,13 +292,13 @@ const addExperience = async (profileId, experienceData) => {
 
 const getAllSkills = async () => {
   const query = `
-    SELECT DISTINCT unnest(skills) as skill
-    FROM lookbook_profiles
-    ORDER BY skill ASC
+    SELECT name
+    FROM lookbook_skills
+    ORDER BY display_order ASC, name ASC
   `;
   
   const result = await pool.query(query);
-  return result.rows.map(row => row.skill);
+  return result.rows.map(row => row.name);
 };
 
 // =====================================================
@@ -307,13 +307,13 @@ const getAllSkills = async () => {
 
 const getAllIndustries = async () => {
   const query = `
-    SELECT DISTINCT unnest(industry_expertise) as industry
-    FROM lookbook_profiles
-    ORDER BY industry ASC
+    SELECT name
+    FROM lookbook_industries
+    ORDER BY display_order ASC, name ASC
   `;
   
   const result = await pool.query(query);
-  return result.rows.map(row => row.industry);
+  return result.rows.map(row => row.name);
 };
 
 module.exports = {

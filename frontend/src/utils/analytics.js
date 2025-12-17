@@ -26,9 +26,7 @@ export const initAnalytics = () => {
     autocapture: true,
     // Performance
     loaded: (posthog) => {
-      if (import.meta.env.DEV) {
-        console.log('✅ PostHog initialized');
-      }
+      // PostHog loaded successfully
     },
   });
 };

@@ -297,7 +297,9 @@ function HomePage() {
                 backdropFilter: 'blur(10px)',
                 width: '100%',
                 height: '320px',
-                animation: 'slideUpFadeIn 0.8s ease-out',
+                animationName: 'slideUpFadeIn',
+                animationDuration: '0.8s',
+                animationTimingFunction: 'ease-out',
                 animationDelay: '0.3s',
                 animationFillMode: 'both'
               }}
@@ -320,7 +322,9 @@ function HomePage() {
                         title={`${profile.user?.first_name || ''} ${profile.user?.last_name || ''}`}
                         style={{
                           aspectRatio: '1 / 1',
-                          animation: isInitialLoad ? `slideInRight 0.6s ease-out` : 'fadeIn 0.4s ease-in',
+                          animationName: isInitialLoad ? 'slideInRight' : 'fadeIn',
+                          animationDuration: isInitialLoad ? '0.6s' : '0.4s',
+                          animationTimingFunction: isInitialLoad ? 'ease-out' : 'ease-in',
                           animationDelay: isInitialLoad ? `${i * 0.1}s` : '0s',
                           animationFillMode: 'both',
                           zIndex: i
@@ -416,7 +420,9 @@ function HomePage() {
                 backdropFilter: 'blur(10px)',
                 width: '100%',
                 height: '320px',
-                animation: 'slideUpFadeIn 0.8s ease-out',
+                animationName: 'slideUpFadeIn',
+                animationDuration: '0.8s',
+                animationTimingFunction: 'ease-out',
                 animationDelay: '0.5s',
                 animationFillMode: 'both'
               }}
@@ -458,7 +464,9 @@ function HomePage() {
                           title={project.name}
                           style={{
                             aspectRatio: '1 / 1',
-                            animation: isInitialLoad ? `slideInRight 0.6s ease-out` : 'fadeIn 0.4s ease-in',
+                            animationName: isInitialLoad ? 'slideInRight' : 'fadeIn',
+                            animationDuration: isInitialLoad ? '0.6s' : '0.4s',
+                            animationTimingFunction: isInitialLoad ? 'ease-out' : 'ease-in',
                             animationDelay: isInitialLoad ? `${i * 0.1}s` : '0s',
                             animationFillMode: 'both',
                             zIndex: i

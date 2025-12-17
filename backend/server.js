@@ -27,9 +27,30 @@ app.use(compression({
   level: 6
 }));
 
-// CORS configuration
+// CORS configuration - more flexible for development
 const corsOptions = {
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, Postman, etc.)
+    if (!origin) return callback(null, true);
+    
+    // In development, allow any localhost port
+    if (process.env.NODE_ENV !== 'production') {
+      if (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
+        return callback(null, true);
+      }
+    }
+    
+    // In production, only allow the configured frontend URL
+    const allowedOrigins = process.env.FRONTEND_URL ? 
+      process.env.FRONTEND_URL.split(',') : 
+      ['http://localhost:5175', 'http://localhost:5176'];
+    
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
   optionsSuccessStatus: 200
 };

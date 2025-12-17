@@ -203,6 +203,18 @@ router.put('/:slug', async (req, res) => {
       delete projectUpdates.shortDescription;
     }
     
+    // Map card background URL from camelCase to snake_case
+    if (projectUpdates.cardBackgroundUrl !== undefined) {
+      projectUpdates.card_background_url = projectUpdates.cardBackgroundUrl;
+      delete projectUpdates.cardBackgroundUrl;
+    }
+    
+    // Map card background video URL from camelCase to snake_case
+    if (projectUpdates.cardBackgroundVideoUrl !== undefined) {
+      projectUpdates.card_background_video_url = projectUpdates.cardBackgroundVideoUrl;
+      delete projectUpdates.cardBackgroundVideoUrl;
+    }
+    
     // Map partner fields from camelCase to snake_case
     if (projectUpdates.hasPartner !== undefined) {
       projectUpdates.has_partner = projectUpdates.hasPartner;

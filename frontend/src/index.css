@@ -448,13 +448,13 @@
 /* Custom cursor for profile cards - circular arrow button */
 .person-card-cursor,
 .person-card-cursor * {
-  cursor: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 40 40'%3E%3Ccircle cx='20' cy='20' r='20' fill='white'/%3E%3Cpath d='M16 10L26 20L16 30' stroke='%234242ea' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E") 20 20, pointer !important;
+  cursor: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 40 40'%3E%3Ccircle cx='20' cy='20' r='20' fill='white'/%3E%3Cpath d='M16 10L26 20L16 30' stroke='%234242ea' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E") 14 14, pointer !important;
 }
 
 /* Custom cursor for project cards - circular arrow button */
 .project-card-cursor,
 .project-card-cursor * {
-  cursor: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 40 40'%3E%3Ccircle cx='20' cy='20' r='20' fill='white'/%3E%3Cpath d='M16 10L26 20L16 30' stroke='%234242ea' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E") 20 20, pointer !important;
+  cursor: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 40 40'%3E%3Ccircle cx='20' cy='20' r='20' fill='white'/%3E%3Cpath d='M16 10L26 20L16 30' stroke='%234242ea' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E") 14 14, pointer !important;
 }
 
 /* Page navigation button hover effect with swipe animation */
@@ -623,7 +623,7 @@ body.grid-view-page,
 html.grid-view-page {
   scrollbar-width: none !important; /* Firefox */
   -ms-overflow-style: none !important; /* IE and Edge */
-  overflow-y: hidden !important;
+  /* overflow-y is controlled by JS for perfect 4x2 grids only */
 }
 
 body.grid-view-page::-webkit-scrollbar,

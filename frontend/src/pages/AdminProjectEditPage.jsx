@@ -26,6 +26,8 @@ function AdminProjectEditPage() {
     summary: '',
     short_description: '',
     main_image_url: '',
+    card_background_url: '',
+    card_background_video_url: '',
     icon_url: '',
     demo_video_url: '',
     github_url: '',
@@ -44,6 +46,8 @@ function AdminProjectEditPage() {
   const [skillInput, setSkillInput] = useState('');
   const [sectorInput, setSectorInput] = useState('');
   const [imageInputMode, setImageInputMode] = useState('url'); // 'url' or 'upload'
+  const [cardBackgroundInputMode, setCardBackgroundInputMode] = useState('url'); // 'url' or 'upload'
+  const [cardBackgroundVideoInputMode, setCardBackgroundVideoInputMode] = useState('url'); // 'url' or 'upload'
   const [iconInputMode, setIconInputMode] = useState('url'); // 'url' or 'upload'
   const [partnerLogoInputMode, setPartnerLogoInputMode] = useState('url'); // 'url' or 'upload'
   const [editMode, setEditMode] = useState('form'); // 'form' or 'wysiwyg'
@@ -105,6 +109,82 @@ function AdminProjectEditPage() {
       console.error('Error uploading image:', error);
       toast.error('Upload failed', {
         description: 'Failed to process the image. Please try again.'
+      });
+    }
+  };
+
+  // Handle card background image file upload
+  const handleCardBackgroundUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      toast.error('Invalid file type', {
+        description: 'Please upload an image file (PNG, JPG, SVG, etc.)'
+      });
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('File too large', {
+        description: 'Please upload an image smaller than 5MB'
+      });
+      return;
+    }
+
+    try {
+      toast.info('Uploading card background...', {
+        description: 'Converting image to base64...'
+      });
+      const base64 = await fileToBase64(file);
+      setFormData({ ...formData, card_background_url: base64 });
+      toast.success('Card background uploaded!', {
+        description: 'Image has been converted and will be saved with the project'
+      });
+    } catch (error) {
+      console.error('Error uploading card background:', error);
+      toast.error('Upload failed', {
+        description: 'Failed to process the image. Please try again.'
+      });
+    }
+  };
+
+  // Handle card background video file upload
+  const handleCardBackgroundVideoUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('video/')) {
+      toast.error('Invalid file type', {
+        description: 'Please upload a video file (MP4, WebM, etc.)'
+      });
+      return;
+    }
+
+    // Validate file size (max 10MB for video)
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('File too large', {
+        description: 'Please upload a video smaller than 10MB'
+      });
+      return;
+    }
+
+    try {
+      toast.info('Uploading card background video...', {
+        description: 'Converting video to base64...'
+      });
+      const base64 = await fileToBase64(file);
+      setFormData({ ...formData, card_background_video_url: base64 });
+      toast.success('Card background video uploaded!', {
+        description: 'Video has been converted and will be saved with the project'
+      });
+    } catch (error) {
+      console.error('Error uploading card background video:', error);
+      toast.error('Upload failed', {
+        description: 'Failed to process the video. Please try again.'
       });
     }
   };
@@ -271,6 +351,8 @@ function AdminProjectEditPage() {
         summary: project.summary || '',
         short_description: project.short_description || '',
         main_image_url: project.main_image_url || '',
+        card_background_url: project.card_background_url || '',
+        card_background_video_url: project.card_background_video_url || '',
         icon_url: project.icon_url || '',
         demo_video_url: normalizedVideoUrl,
         github_url: project.github_url || '',
@@ -728,6 +810,192 @@ function AdminProjectEditPage() {
                     <p className="text-xs text-red-500 mt-1" style={{display: 'none'}}>
                       Unable to load image preview
                     </p>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <Label htmlFor="card_background_url">Card Background Image</Label>
+                <p className="text-xs text-gray-500 mt-1 mb-3">
+                  Optional: Upload a background image specifically for the project card. If not set, the main image will be used.
+                </p>
+                
+                {/* Toggle between URL and Upload */}
+                <div className="flex gap-2 mb-3">
+                  <Button
+                    type="button"
+                    variant={cardBackgroundInputMode === 'url' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setCardBackgroundInputMode('url')}
+                    className="flex items-center gap-2"
+                    style={cardBackgroundInputMode === 'url' ? {backgroundColor: '#4242ea', color: 'white'} : {backgroundColor: 'white', color: '#374151'}}
+                  >
+                    <LinkIcon className="w-4 h-4" />
+                    URL
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={cardBackgroundInputMode === 'upload' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setCardBackgroundInputMode('upload')}
+                    className="flex items-center gap-2"
+                    style={cardBackgroundInputMode === 'upload' ? {backgroundColor: '#4242ea', color: 'white'} : {backgroundColor: 'white', color: '#374151'}}
+                  >
+                    <Upload className="w-4 h-4" />
+                    Upload
+                  </Button>
+                </div>
+
+                {cardBackgroundInputMode === 'url' ? (
+                  <Textarea
+                    id="card_background_url"
+                    value={formData.card_background_url}
+                    onChange={(e) => setFormData({ ...formData, card_background_url: e.target.value })}
+                    rows={2}
+                    placeholder="Enter image URL or leave empty to use main image"
+                    className="bg-white text-gray-900"
+                  />
+                ) : (
+                  <>
+                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-gray-400 transition-colors">
+                      <input
+                        type="file"
+                        id="card_background_upload"
+                        accept="image/*"
+                        onChange={handleCardBackgroundUpload}
+                        className="hidden"
+                      />
+                      <label
+                        htmlFor="card_background_upload"
+                        className="cursor-pointer flex flex-col items-center gap-2"
+                      >
+                        <Upload className="w-8 h-8 text-gray-400" />
+                        <span className="text-sm text-gray-600">
+                          Click to upload card background
+                        </span>
+                        <span className="text-xs text-gray-500">
+                          PNG, JPG, SVG up to 5MB
+                        </span>
+                      </label>
+                    </div>
+                    {formData.card_background_url && formData.card_background_url.startsWith('data:') && (
+                      <div className="mt-2 flex items-center gap-2 text-sm text-green-600">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        Card background uploaded successfully
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* Card Background Preview */}
+                {formData.card_background_url && (
+                  <div className="mt-2 p-3 bg-gray-50 rounded border border-gray-200">
+                    <p className="text-xs text-gray-600 mb-2">Card Background Preview:</p>
+                    <img 
+                      src={getImageUrl(formData.card_background_url)} 
+                      alt="Card background preview" 
+                      className="w-full h-48 object-cover rounded"
+                      onError={(e) => {
+                        e.target.style.display = 'none';
+                        e.target.nextSibling.style.display = 'block';
+                      }}
+                    />
+                    <p className="text-xs text-red-500 mt-1" style={{display: 'none'}}>
+                      Unable to load image preview
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <Label htmlFor="card_background_video_url">Card Background Video</Label>
+                <p className="text-xs text-gray-500 mt-1 mb-3">
+                  Optional: Upload a video background for the project card. Takes priority over images. Video will autoplay, loop, and be muted.
+                </p>
+                
+                {/* Toggle between URL and Upload */}
+                <div className="flex gap-2 mb-3">
+                  <Button
+                    type="button"
+                    variant={cardBackgroundVideoInputMode === 'url' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setCardBackgroundVideoInputMode('url')}
+                    className="flex items-center gap-2"
+                    style={cardBackgroundVideoInputMode === 'url' ? {backgroundColor: '#4242ea', color: 'white'} : {backgroundColor: 'white', color: '#374151'}}
+                  >
+                    <LinkIcon className="w-4 h-4" />
+                    URL
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={cardBackgroundVideoInputMode === 'upload' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setCardBackgroundVideoInputMode('upload')}
+                    className="flex items-center gap-2"
+                    style={cardBackgroundVideoInputMode === 'upload' ? {backgroundColor: '#4242ea', color: 'white'} : {backgroundColor: 'white', color: '#374151'}}
+                  >
+                    <Upload className="w-4 h-4" />
+                    Upload
+                  </Button>
+                </div>
+
+                {cardBackgroundVideoInputMode === 'url' ? (
+                  <Textarea
+                    id="card_background_video_url"
+                    value={formData.card_background_video_url}
+                    onChange={(e) => setFormData({ ...formData, card_background_video_url: e.target.value })}
+                    rows={2}
+                    placeholder="Enter video URL or leave empty"
+                    className="bg-white text-gray-900"
+                  />
+                ) : (
+                  <>
+                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-gray-400 transition-colors">
+                      <input
+                        type="file"
+                        id="card_background_video_upload"
+                        accept="video/*"
+                        onChange={handleCardBackgroundVideoUpload}
+                        className="hidden"
+                      />
+                      <label
+                        htmlFor="card_background_video_upload"
+                        className="cursor-pointer flex flex-col items-center gap-2"
+                      >
+                        <Upload className="w-8 h-8 text-gray-400" />
+                        <span className="text-sm text-gray-600">
+                          Click to upload card background video
+                        </span>
+                        <span className="text-xs text-gray-500">
+                          MP4, WebM up to 10MB
+                        </span>
+                      </label>
+                    </div>
+                    {formData.card_background_video_url && formData.card_background_video_url.startsWith('data:') && (
+                      <div className="mt-2 flex items-center gap-2 text-sm text-green-600">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        Card background video uploaded successfully
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* Card Background Video Preview */}
+                {formData.card_background_video_url && (
+                  <div className="mt-2 p-3 bg-gray-50 rounded border border-gray-200">
+                    <p className="text-xs text-gray-600 mb-2">Card Background Video Preview:</p>
+                    <video 
+                      src={formData.card_background_video_url.startsWith('data:') ? formData.card_background_video_url : getImageUrl(formData.card_background_video_url)} 
+                      className="w-full h-48 object-cover rounded"
+                      autoPlay
+                      muted
+                      loop
+                      playsInline
+                    />
                   </div>
                 )}
               </div>

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { projectsAPI } from '../utils/api';
+import { projectsAPI, initiativesAPI } from '../utils/api';
 import AdminLayout from '../components/AdminLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,6 +15,8 @@ function AdminProjectsPage() {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedInitiative, setSelectedInitiative] = useState(null);
+  const [initiatives, setInitiatives] = useState([]);
   const [deleteDialog, setDeleteDialog] = useState({ isOpen: false, project: null });
   const prevLocationKeyRef = useRef(null);
   const lastFetchTimeRef = useRef(0);
@@ -22,6 +24,7 @@ function AdminProjectsPage() {
 
   useEffect(() => {
     fetchProjects();
+    fetchInitiatives();
     lastFetchTimeRef.current = Date.now();
     prevLocationKeyRef.current = location.key;
   }, []);
@@ -58,12 +61,34 @@ function AdminProjectsPage() {
     }
     
     prevLocationKeyRef.current = location.key;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname, location.state, location.key]);
+
+  const fetchInitiatives = async () => {
+    try {
+      const response = await initiativesAPI.getAll();
+      if (response.success) {
+        setInitiatives(response.data || []);
+      }
+    } catch (error) {
+      console.error('Error fetching initiatives:', error);
+    }
+  };
 
   const fetchProjects = async () => {
     try {
       setLoading(true);
-      const response = await projectsAPI.getAll({ limit: 100 });
+      const filters = { limit: 100 };
+      
+      // Add cohort filter if an initiative is selected
+      if (selectedInitiative) {
+        const initiative = initiatives.find(i => i.slug === selectedInitiative);
+        if (initiative) {
+          filters.cohort = initiative.cohort_value;
+        }
+      }
+      
+      const response = await projectsAPI.getAll(filters);
       setProjects(response.data || []);
     } catch (error) {
       console.error('Error fetching projects:', error);
@@ -71,6 +96,14 @@ function AdminProjectsPage() {
       setLoading(false);
     }
   };
+
+  // Refresh projects when initiative filter changes
+  useEffect(() => {
+    if (initiatives.length > 0) {
+      fetchProjects();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedInitiative]);
 
   const filteredProjects = projects.filter(project =>
     project.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -124,6 +157,36 @@ function AdminProjectsPage() {
           </Link>
         </div>
 
+        {/* Initiative Filter */}
+        {initiatives.length > 0 && (
+          <div className="mb-6">
+            <h3 className="text-sm font-medium text-gray-700 mb-3">Filter by Initiative</h3>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant={selectedInitiative === null ? "default" : "outline"}
+                size="sm"
+                onClick={() => setSelectedInitiative(null)}
+                style={selectedInitiative === null ? {backgroundColor: '#4242ea', color: 'white'} : {}}
+                className={selectedInitiative === null ? '' : 'bg-white hover:bg-gray-50'}
+              >
+                All Projects
+              </Button>
+              {initiatives.map(initiative => (
+                <Button
+                  key={initiative.slug}
+                  variant={selectedInitiative === initiative.slug ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setSelectedInitiative(initiative.slug)}
+                  style={selectedInitiative === initiative.slug ? {backgroundColor: '#4242ea', color: 'white'} : {}}
+                  className={selectedInitiative === initiative.slug ? '' : 'bg-white hover:bg-gray-50'}
+                >
+                  {initiative.name}
+                </Button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Search */}
         <div className="mb-6">
           <div className="relative">
@@ -142,15 +205,17 @@ function AdminProjectsPage() {
         <div className="grid grid-cols-3 gap-4 mb-6">
           <Card>
             <CardContent className="p-4">
-              <div className="text-sm text-gray-500">Total Projects</div>
-              <div className="text-2xl font-bold mt-1">{projects.length}</div>
+              <div className="text-sm text-gray-500">
+                {selectedInitiative ? 'Filtered Projects' : 'Total Projects'}
+              </div>
+              <div className="text-2xl font-bold mt-1">{filteredProjects.length}</div>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4">
               <div className="text-sm text-gray-500">With Videos</div>
               <div className="text-2xl font-bold mt-1">
-                {projects.filter(p => p.demo_video_url).length}
+                {filteredProjects.filter(p => p.demo_video_url).length}
               </div>
             </CardContent>
           </Card>
@@ -158,7 +223,7 @@ function AdminProjectsPage() {
             <CardContent className="p-4">
               <div className="text-sm text-gray-500">With Team</div>
               <div className="text-2xl font-bold mt-1">
-                {projects.filter(p => p.participants && p.participants.length > 0).length}
+                {filteredProjects.filter(p => p.participants && p.participants.length > 0).length}
               </div>
             </CardContent>
           </Card>
@@ -176,6 +241,9 @@ function AdminProjectsPage() {
                     Project
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Initiative
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Technologies
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -190,72 +258,89 @@ function AdminProjectsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {filteredProjects.map((project) => (
-                  <tr key={project.project_id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4">
-                      <div>
-                        <div className="font-medium text-gray-900">{project.title}</div>
-                        <div className="text-sm text-gray-500 line-clamp-1">
-                          {project.short_description || project.summary}
+                {filteredProjects.map((project) => {
+                  // Find the initiative that matches this project's cohort
+                  const projectInitiative = initiatives.find(i => i.cohort_value === project.cohort);
+                  
+                  return (
+                    <tr key={project.project_id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4">
+                        <div>
+                          <div className="font-medium text-gray-900">{project.title}</div>
+                          <div className="text-sm text-gray-500 line-clamp-1">
+                            {project.short_description || project.summary}
+                          </div>
                         </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex flex-wrap gap-1">
-                        {project.skills?.slice(0, 3).map((skill, idx) => (
+                      </td>
+                      <td className="px-6 py-4">
+                        {projectInitiative ? (
                           <Badge 
-                            key={idx} 
-                            className="text-xs bg-blue-100 text-blue-800 hover:bg-blue-200 border-0"
+                            className="text-xs font-medium"
+                            style={{backgroundColor: '#4242ea', color: 'white'}}
                           >
-                            {skill}
+                            {projectInitiative.name}
                           </Badge>
-                        ))}
-                        {project.skills?.length > 3 && (
-                          <Badge 
-                            className="text-xs bg-gray-100 text-gray-700 hover:bg-gray-200 border-0"
-                          >
-                            +{project.skills.length - 3}
-                          </Badge>
+                        ) : (
+                          <span className="text-xs text-gray-400">No initiative</span>
                         )}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex flex-wrap gap-1">
-                        {project.sectors?.map((sector, idx) => (
-                          <Badge key={idx} className="text-xs" style={{backgroundColor: '#4242ea'}}>
-                            {sector}
-                          </Badge>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="text-sm text-gray-900">
-                        {project.participants?.length || 0} members
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center justify-end gap-2">
-                        <Link to={`/projects/${project.slug}`} target="_blank">
-                          <Button variant="ghost" size="sm">
-                            <Eye className="w-4 h-4" />
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex flex-wrap gap-1">
+                          {project.skills?.slice(0, 3).map((skill, idx) => (
+                            <Badge 
+                              key={idx} 
+                              className="text-xs bg-blue-100 text-blue-800 hover:bg-blue-200 border-0"
+                            >
+                              {skill}
+                            </Badge>
+                          ))}
+                          {project.skills?.length > 3 && (
+                            <Badge 
+                              className="text-xs bg-gray-100 text-gray-700 hover:bg-gray-200 border-0"
+                            >
+                              +{project.skills.length - 3}
+                            </Badge>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex flex-wrap gap-1">
+                          {project.sectors?.map((sector, idx) => (
+                            <Badge key={idx} className="text-xs" style={{backgroundColor: '#4242ea'}}>
+                              {sector}
+                            </Badge>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm text-gray-900">
+                          {project.participants?.length || 0} members
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center justify-end gap-2">
+                          <Link to={`/projects/${project.slug}`} target="_blank">
+                            <Button variant="ghost" size="sm">
+                              <Eye className="w-4 h-4" />
+                            </Button>
+                          </Link>
+                          <Link to={`/admin/projects/${project.slug}/edit`}>
+                            <Button variant="ghost" size="sm">
+                              <Edit className="w-4 h-4" />
+                            </Button>
+                          </Link>
+                          <Button 
+                            variant="ghost" 
+                            size="sm"
+                            onClick={() => handleDeleteClick(project)}
+                          >
+                            <Trash2 className="w-4 h-4" />
                           </Button>
-                        </Link>
-                        <Link to={`/admin/projects/${project.slug}/edit`}>
-                          <Button variant="ghost" size="sm">
-                            <Edit className="w-4 h-4" />
-                          </Button>
-                        </Link>
-                        <Button 
-                          variant="ghost" 
-                          size="sm"
-                          onClick={() => handleDeleteClick(project)}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
             

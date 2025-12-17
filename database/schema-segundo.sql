@@ -93,7 +93,7 @@ CREATE TABLE IF NOT EXISTS lookbook_projects (
   live_url TEXT,
   
   -- Metadata
-  cohort VARCHAR(10), -- '2024', '2023', '2022', etc.
+  cohort VARCHAR(50), -- Initiative cohort value (e.g., 'SMB Winter 2025', 'Demo Day Fall 2025')
   status VARCHAR(20) DEFAULT 'active', -- active, archived, draft
   
   created_at TIMESTAMPTZ DEFAULT NOW(),

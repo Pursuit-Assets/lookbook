@@ -48,6 +48,8 @@ const getAllProjects = async (filters = {}) => {
       p.skills,
       p.sectors,
       p.main_image_url,
+      p.card_background_url,
+      p.card_background_video_url,
       p.icon_url,
       p.demo_video_url,
       p.github_url,
@@ -165,6 +167,8 @@ const createProject = async (projectData) => {
     description,
     mainImageUrl,
     mainImageLqip,
+    cardBackgroundUrl,
+    cardBackgroundVideoUrl,
     iconUrl,
     demoVideoUrl,
     skills = [],
@@ -180,16 +184,16 @@ const createProject = async (projectData) => {
   
   const query = `
     INSERT INTO lookbook_projects (
-      slug, title, summary, description, main_image_url, main_image_lqip,
-      icon_url, demo_video_url, skills, sectors, github_url, live_url, cohort, status,
+      slug, title, summary, description, main_image_url, main_image_lqip, card_background_url,
+      card_background_video_url, icon_url, demo_video_url, skills, sectors, github_url, live_url, cohort, status,
       has_partner, partner_name, partner_logo_url
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
     RETURNING *
   `;
   
   const params = [
-    slug, title, summary, description, mainImageUrl, mainImageLqip,
-    iconUrl, demoVideoUrl, skills, sectors, githubUrl, liveUrl, cohort, status,
+    slug, title, summary, description, mainImageUrl, mainImageLqip, cardBackgroundUrl,
+    cardBackgroundVideoUrl, iconUrl, demoVideoUrl, skills, sectors, githubUrl, liveUrl, cohort, status,
     hasPartner, partnerName, partnerLogoUrl
   ];
   
@@ -204,7 +208,7 @@ const createProject = async (projectData) => {
 const updateProject = async (slug, updates) => {
   const allowedFields = [
     'slug', 'title', 'summary', 'short_description', 'description', 'main_image_url', 'main_image_lqip',
-    'icon_url', 'demo_video_url', 'skills', 'sectors', 'github_url', 'live_url',
+    'card_background_url', 'card_background_video_url', 'icon_url', 'demo_video_url', 'skills', 'sectors', 'github_url', 'live_url',
     'cohort', 'status', 'has_partner', 'partner_name', 'partner_logo_url'
   ];
   
@@ -305,14 +309,16 @@ const getProjectsByProfile = async (profileId) => {
 
 const getAllSkills = async () => {
   const query = `
-    SELECT DISTINCT unnest(skills) as skill
+    SELECT DISTINCT unnest(skills) as name
     FROM lookbook_projects
     WHERE status = 'active'
-    ORDER BY skill ASC
+      AND skills IS NOT NULL
+      AND array_length(skills, 1) > 0
+    ORDER BY name ASC
   `;
   
   const result = await pool.query(query);
-  return result.rows.map(row => row.skill);
+  return result.rows.map(row => row.name);
 };
 
 // =====================================================
@@ -321,14 +327,16 @@ const getAllSkills = async () => {
 
 const getAllSectors = async () => {
   const query = `
-    SELECT DISTINCT unnest(sectors) as sector
+    SELECT DISTINCT unnest(sectors) as name
     FROM lookbook_projects
     WHERE status = 'active'
-    ORDER BY sector ASC
+      AND sectors IS NOT NULL
+      AND array_length(sectors, 1) > 0
+    ORDER BY name ASC
   `;
   
   const result = await pool.query(query);
-  return result.rows.map(row => row.sector);
+  return result.rows.map(row => row.name);
 };
 
 // =====================================================
