@@ -892,8 +892,8 @@ function PersonDetailPage() {
       
       if (layoutView === 'grid') {
         // Grid view: fetch paginated data (8 per page) OR all data for initiative filters
-        // When on an initiative filter URL, show all projects without pagination
-        const shouldPaginate = !isFilterUrl || viewMode !== 'projects';
+        // When on an initiative filter URL OR initiative is selected, show all projects without pagination
+        const shouldPaginate = (!isFilterUrl && !selectedInitiative) || viewMode !== 'projects';
         const pageSize = 8;
         const offset = shouldPaginate ? gridPage * pageSize : 0;
         const limit = shouldPaginate ? pageSize : 100; // Fetch all for initiative filters
@@ -1871,10 +1871,10 @@ function PersonDetailPage() {
         <div className="flex flex-row justify-between items-end gap-3" style={{marginLeft: 0, marginRight: 0, paddingLeft: '2rem', paddingRight: '1rem', width: '100%'}}>
           {/* Left side: Pagination controls - aligned with cards */}
           <div className="flex items-center gap-3" style={{marginLeft: 0, paddingLeft: 0}}>
-            {/* Page indicator with navigation - left-aligned */}
+            {/* Page indicator with navigation - left-aligned - Hide when initiative filter is active */}
             {layoutView === 'grid' && (
               <>
-                {viewMode === 'projects' && !isFilterUrl && (
+                {viewMode === 'projects' && !isFilterUrl && !selectedInitiative && (
                   <div className="flex items-center">
                     <button
                       onClick={() => setGridPage(Math.max(0, gridPage - 1))}
@@ -2621,7 +2621,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                             >
                               {initiatives.find(i => i.slug === selectedInitiative)?.name}
                             </h2>
-                            <p className="text-gray-300 text-base md:text-lg leading-relaxed max-w-3xl">
+                            <p className="text-gray-300 text-base md:text-lg leading-relaxed max-w-full lg:max-w-3xl">
                               {initiatives.find(i => i.slug === selectedInitiative)?.description}
                             </p>
                           </div>
@@ -2664,8 +2664,8 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                 </>
               )}
 
-            {/* Mobile Navigation - Bottom Fixed for Projects Grid - Hide on initiative filter URLs */}
-            {!isFilterUrl && (
+            {/* Mobile Navigation - Bottom Fixed for Projects Grid - Hide when initiative filter is active */}
+            {!isFilterUrl && !selectedInitiative && (
             <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white z-50 px-4 py-3 flex items-center justify-center shadow-lg">
               <button
                 onClick={() => setGridPage(Math.max(0, gridPage - 1))}
