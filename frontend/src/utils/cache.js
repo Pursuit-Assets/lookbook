@@ -51,6 +51,11 @@ class SimpleCache {
       this.pendingRequests.delete(key);
     });
   }
+  
+  // Helper to get all cache keys (for clearing by prefix)
+  getKeys() {
+    return Array.from(this.cache.keys());
+  }
 }
 
 export const apiCache = new SimpleCache();

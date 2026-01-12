@@ -9,15 +9,25 @@ let dbConfig;
 
 if (process.env.DATABASE_URL) {
   // Use DATABASE_URL if provided (Heroku, Railway, etc.)
+  const isRemoteDB = process.env.DATABASE_URL.includes('34.57.101.141');
+  
   dbConfig = {
     connectionString: process.env.DATABASE_URL,
-    // Connection pool settings for better performance
-    max: 20,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 2000,
+    // Optimized connection pool settings for remote databases
+    // Increased pool size to handle concurrent requests better
+    max: isRemoteDB ? 25 : 20, // Increased from 10 to 25 for remote to handle concurrent requests
+    min: isRemoteDB ? 5 : 0, // Increased from 2 to 5 to keep more connections warm
+    idleTimeoutMillis: isRemoteDB ? 60000 : 30000, // Keep connections longer for remote
+    connectionTimeoutMillis: isRemoteDB ? 20000 : 10000, // Increased timeout for remote (was 15s)
+    // Keep connections alive to reduce overhead
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10000,
+    // Allow waiting for connections when pool is full (instead of immediate error)
+    allowExitOnIdle: false,
   };
-  // SSL configuration for hosted databases
-  if (process.env.NODE_ENV === 'production') {
+  // SSL configuration for hosted databases (Google Cloud SQL requires SSL)
+  // Enable SSL for remote databases (including Google Cloud SQL)
+  if (isRemoteDB || process.env.NODE_ENV === 'production') {
     dbConfig.ssl = {
       rejectUnauthorized: false
     };

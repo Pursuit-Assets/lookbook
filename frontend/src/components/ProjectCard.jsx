@@ -1,4 +1,6 @@
+import { memo } from 'react';
 import { Link } from 'react-router-dom';
+import { getImageUrl } from '../utils/api';
 import './ProjectCard.css';
 
 function ProjectCard({ project }) {
@@ -22,7 +24,7 @@ function ProjectCard({ project }) {
         </div>
       ) : cardImageUrl ? (
         <div className="project-card__image">
-          <img src={cardImageUrl} alt={project.title} />
+          <img src={getImageUrl(cardImageUrl)} alt={project.title} loading="lazy" />
         </div>
       ) : null}
       
@@ -60,6 +62,17 @@ function ProjectCard({ project }) {
   );
 }
 
-export default ProjectCard;
+// Memoize component to prevent unnecessary re-renders
+// Only re-render if the project slug or key properties change
+export default memo(ProjectCard, (prevProps, nextProps) => {
+  // Return true if props are equal (skip re-render), false if different (re-render)
+  return (
+    prevProps.project?.slug === nextProps.project?.slug &&
+    prevProps.project?.title === nextProps.project?.title &&
+    prevProps.project?.summary === nextProps.project?.summary &&
+    JSON.stringify(prevProps.project?.skills) === JSON.stringify(nextProps.project?.skills) &&
+    JSON.stringify(prevProps.project?.participants) === JSON.stringify(nextProps.project?.participants)
+  );
+});
 
 

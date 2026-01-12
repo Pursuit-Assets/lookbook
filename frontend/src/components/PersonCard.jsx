@@ -1,4 +1,6 @@
+import { memo } from 'react';
 import { Link } from 'react-router-dom';
+import { getImageUrl } from '../utils/api';
 import './PersonCard.css';
 
 function PersonCard({ person }) {
@@ -7,9 +9,10 @@ function PersonCard({ person }) {
       <div className="person-card__header">
         {person.photo_url ? (
           <img 
-            src={person.photo_url} 
+            src={getImageUrl(person.photo_url)} 
             alt={person.name}
             className="person-card__photo"
+            loading="lazy"
           />
         ) : (
           <div className="person-card__photo person-card__photo--placeholder">
@@ -71,6 +74,18 @@ function PersonCard({ person }) {
   );
 }
 
-export default PersonCard;
+// Memoize component to prevent unnecessary re-renders
+// Only re-render if the person slug or key properties change
+export default memo(PersonCard, (prevProps, nextProps) => {
+  // Return true if props are equal (skip re-render), false if different (re-render)
+  return (
+    prevProps.person?.slug === nextProps.person?.slug &&
+    prevProps.person?.name === nextProps.person?.name &&
+    prevProps.person?.title === nextProps.person?.title &&
+    prevProps.person?.open_to_work === nextProps.person?.open_to_work &&
+    JSON.stringify(prevProps.person?.skills) === JSON.stringify(nextProps.person?.skills) &&
+    JSON.stringify(prevProps.person?.industry_expertise) === JSON.stringify(nextProps.person?.industry_expertise)
+  );
+});
 
 

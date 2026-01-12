@@ -1,0 +1,105 @@
+.person-card-skeleton {
+  display: block;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  animation: fadeIn 0.3s ease-in-out;
+  position: relative;
+}
+
+.person-card-skeleton__header {
+  padding: var(--spacing-lg);
+  display: flex;
+  justify-content: center;
+  background: #e8e8e8;
+}
+
+.person-card-skeleton__photo {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: #d8d8d8;
+  border: 3px solid var(--color-bg);
+}
+
+.person-card-skeleton__body {
+  padding: var(--spacing-lg);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 200px;
+}
+
+.person-card-skeleton__content {
+  flex: 1;
+}
+
+.person-card-skeleton__name {
+  width: 60%;
+  height: 1.125rem;
+  background: #e8e8e8;
+  border-radius: 4px;
+  margin-bottom: var(--spacing-xs);
+}
+
+.person-card-skeleton__title {
+  width: 80%;
+  height: 0.875rem;
+  background: #e8e8e8;
+  border-radius: 4px;
+  margin-bottom: var(--spacing-sm);
+}
+
+.person-card-skeleton__industries {
+  margin-top: var(--spacing-sm);
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--color-border);
+}
+
+.skeleton-industry-text {
+  width: 70%;
+  height: 0.875rem;
+  background: #e8e8e8;
+  border-radius: 4px;
+}
+
+.person-card-skeleton__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-md);
+}
+
+.person-card-skeleton__skills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  flex: 1;
+}
+
+.skeleton-badge {
+  width: 50px;
+  height: 1.5rem;
+  background: #e8e8e8;
+  border-radius: 12px;
+}
+
+.person-card-skeleton__arrow {
+  width: 2rem;
+  height: 2rem;
+  min-width: 2rem;
+  border-radius: 50%;
+  background: #e8e8e8;
+  flex-shrink: 0;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

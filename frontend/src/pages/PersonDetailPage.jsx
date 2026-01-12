@@ -4,6 +4,10 @@ import { profilesAPI, projectsAPI, initiativesAPI, getImageUrl } from '../utils/
 import analytics from '../utils/analytics';
 import { useLoadingProgress } from '../contexts/LoadingProgressContext';
 import LazyVideo from '../components/LazyVideo';
+import ProjectCardSkeleton from '../components/ProjectCardSkeleton';
+import PersonCardSkeleton from '../components/PersonCardSkeleton';
+// VirtualizedList requires react-window: npm install react-window
+// import VirtualizedList from '../components/VirtualizedList';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -68,11 +72,21 @@ const PageNavButton = ({ onClick, disabled, direction = 'left', ariaLabel }) => 
 };
 
 // Reusable Page Display Component
-const PageDisplay = ({ current, total, viewMode, isList = false, totalCount = null, isDetail = false, hasContent = false }) => {
+const PageDisplay = ({ current, total, viewMode, isList = false, totalCount = null, isDetail = false, hasContent = false, isLoading = false }) => {
   const width = isList 
     ? (viewMode === 'people' ? 'w-36' : 'w-40')
     : (viewMode === 'people' ? 'w-36' : 'w-40');
   const padding = isList ? 'px-[7.5px]' : 'px-[15px]';
+  
+  // Show loading indicator when loading
+  if (isLoading) {
+    return (
+      <div className={`text-base text-gray-700 ${width} text-center bg-white rounded-md border-0 h-10 ${padding} flex items-center justify-center`}>
+        <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-300 border-t-[#4242ea]"></div>
+        <span style={{marginLeft: '0.5em'}}>Loading...</span>
+      </div>
+    );
+  }
   
   // When total is 0, show "0 Pages" or "0 People"/"0 Projects" with 0 in bold
   if (total === 0 && !hasContent) {
@@ -663,9 +677,13 @@ function PersonDetailPage() {
   const [project, setProject] = useState(null);
   const [loading, setLoading] = useState(true);
   const [gridListLoading, setGridListLoading] = useState(false); // Loading state for grid/list views
+  const [loadingMore, setLoadingMore] = useState(false); // Loading state for progressive loading of additional projects
   const [error, setError] = useState(null);
   const { startLoading, setLoadingProgress, completeLoading } = useLoadingProgress();
   const isFetchingRef = useRef(false); // Track if we're currently fetching to prevent multiple simultaneous fetches
+  const filtersFetchedRef = useRef(false); // Track if filters have been fetched to prevent duplicate calls
+  const fetchVersionRef = useRef(0); // Track fetch version to prevent stale responses from updating state
+  const abortControllerRef = useRef(null); // AbortController to cancel in-flight requests on navigation
   const [allProfiles, setAllProfiles] = useState([]);
   const [allProjects, setAllProjects] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(-1);
@@ -773,6 +791,53 @@ function PersonDetailPage() {
   const debouncedPeopleSearch = useDebounce(peopleFilters.search, 500);
   const debouncedProjectSearch = useDebounce(projectFilters.search, 500);
 
+  // Memoize filter arrays to prevent unnecessary re-renders
+  // This creates stable references that only change when the actual values change
+  const peopleSkillsFilter = useMemo(() => peopleFilters.skills, [JSON.stringify(peopleFilters.skills)]);
+  const peopleIndustriesFilter = useMemo(() => peopleFilters.industries, [JSON.stringify(peopleFilters.industries)]);
+  const projectSkillsFilter = useMemo(() => projectFilters.skills, [JSON.stringify(projectFilters.skills)]);
+  const projectSectorsFilter = useMemo(() => projectFilters.sectors, [JSON.stringify(projectFilters.sectors)]);
+
+  // Prefetch next/previous page data on hover for instant pagination
+  const prefetchPage = useCallback((pageOffset) => {
+    const targetPage = gridPage + pageOffset;
+    const pageSize = 8;
+    const maxPage = viewMode === 'projects' 
+      ? Math.ceil(totalProjects / pageSize) - 1
+      : Math.ceil(totalProfiles / pageSize) - 1;
+    
+    // Only prefetch if target page is valid
+    if (targetPage < 0 || targetPage > maxPage) return;
+    
+    const offset = targetPage * pageSize;
+    const limit = pageSize;
+    
+    // Prefetch the data (will be cached)
+    if (viewMode === 'projects') {
+      const cohortFilter = selectedInitiative 
+        ? initiatives.find(i => i.slug === selectedInitiative)?.cohort_value 
+        : undefined;
+      projectsAPI.getAll({
+        limit,
+        offset,
+        search: debouncedProjectSearch,
+        skills: projectSkillsFilter.length > 0 ? projectSkillsFilter : undefined,
+        sectors: projectSectorsFilter.length > 0 ? projectSectorsFilter : undefined,
+        cohort: cohortFilter,
+        includeParticipants: false
+      });
+    } else {
+      profilesAPI.getAll({
+        limit,
+        offset,
+        search: debouncedPeopleSearch,
+        skills: peopleSkillsFilter.length > 0 ? peopleSkillsFilter : undefined,
+        industries: peopleIndustriesFilter.length > 0 ? peopleIndustriesFilter : undefined,
+        openToWork: peopleFilters.openToWork ? true : undefined
+      });
+    }
+  }, [gridPage, viewMode, totalProjects, totalProfiles, debouncedProjectSearch, debouncedPeopleSearch, projectSkillsFilter, projectSectorsFilter, peopleSkillsFilter, peopleIndustriesFilter, peopleFilters.openToWork, selectedInitiative, initiatives]);
+
   // Filtered data based on search and filters
   const filteredProfiles = useMemo(() => allProfiles.filter(profile => {
     // Search filter (using debounced value)
@@ -869,7 +934,7 @@ function PersonDetailPage() {
   // Reset carousel index when filtered person projects change
   useEffect(() => {
     setProjectCarouselIndex(0);
-  }, [filteredPersonProjects.length, debouncedProjectSearch, projectFilters.skills, projectFilters.sectors]);
+  }, [filteredPersonProjects.length, debouncedProjectSearch, projectSkillsFilter, projectSectorsFilter]);
 
   // Fetch data based on current view
   useEffect(() => {
@@ -905,8 +970,8 @@ function PersonDetailPage() {
               limit,
               offset,
               search: debouncedPeopleSearch,
-              skills: peopleFilters.skills.length > 0 ? peopleFilters.skills : undefined,
-              industries: peopleFilters.industries.length > 0 ? peopleFilters.industries : undefined,
+              skills: peopleSkillsFilter.length > 0 ? peopleSkillsFilter : undefined,
+              industries: peopleIndustriesFilter.length > 0 ? peopleIndustriesFilter : undefined,
               openToWork: peopleFilters.openToWork ? true : undefined
             });
             
@@ -936,27 +1001,81 @@ function PersonDetailPage() {
           try {
             setLoadingProgress(30);
             // Get cohort value from selected initiative for filtering
-            const cohortFilter = selectedInitiative 
-              ? initiatives.find(i => i.slug === selectedInitiative)?.cohort_value 
+            const cohortFilter = selectedInitiative
+              ? initiatives.find(i => i.slug === selectedInitiative)?.cohort_value
               : undefined;
-            
-            const response = await projectsAPI.getAll({
-              limit,
-              offset,
-              search: debouncedProjectSearch,
-              skills: projectFilters.skills.length > 0 ? projectFilters.skills : undefined,
-              sectors: projectFilters.sectors.length > 0 ? projectFilters.sectors : undefined,
-              cohort: cohortFilter
-            });
-            
-            setLoadingProgress(80);
-            if (response.success) {
-              setAllProjects(response.data);
-              const total = response.pagination?.total || response.total || response.data.length;
-              setTotalProjects(total);
+
+            // Use progressive loading for initiative filters to show results faster
+            const useProgressiveLoading = (isFilterUrl || selectedInitiative) && !shouldPaginate;
+
+            if (useProgressiveLoading) {
+              // Progressive loading: fetch first page quickly, then load rest in background
+              const initialResponse = await projectsAPI.getAll({
+                limit: 8,
+                offset: 0,
+                search: debouncedProjectSearch,
+                skills: projectSkillsFilter.length > 0 ? projectSkillsFilter : undefined,
+                sectors: projectSectorsFilter.length > 0 ? projectSectorsFilter : undefined,
+                cohort: cohortFilter,
+                includeParticipants: false
+              });
+
+              setLoadingProgress(80);
+              if (initialResponse.success) {
+                // Show first batch immediately
+                setAllProjects(initialResponse.data);
+                const total = initialResponse.pagination?.total || initialResponse.total || initialResponse.data.length;
+                setTotalProjects(total);
+                setGridListLoading(false); // Stop main loading spinner
+                completeLoading();
+
+                // If there are more projects, fetch them in background
+                if (total > 8) {
+                  setLoadingMore(true);
+                  try {
+                    const remainingResponse = await projectsAPI.getAll({
+                      limit: 100,
+                      offset: 8,
+                      search: debouncedProjectSearch,
+                      skills: projectSkillsFilter.length > 0 ? projectSkillsFilter : undefined,
+                      sectors: projectSectorsFilter.length > 0 ? projectSectorsFilter : undefined,
+                      cohort: cohortFilter,
+                      includeParticipants: false
+                    });
+
+                    if (remainingResponse.success) {
+                      // Append remaining projects
+                      setAllProjects(prev => [...prev, ...remainingResponse.data]);
+                    }
+                  } catch (bgErr) {
+                    console.error('Error fetching remaining projects:', bgErr);
+                  } finally {
+                    setLoadingMore(false);
+                  }
+                }
+              }
+              setLoadingProgress(100);
+            } else {
+              // Standard fetch for paginated views
+              const response = await projectsAPI.getAll({
+                limit,
+                offset,
+                search: debouncedProjectSearch,
+                skills: projectSkillsFilter.length > 0 ? projectSkillsFilter : undefined,
+                sectors: projectSectorsFilter.length > 0 ? projectSectorsFilter : undefined,
+                cohort: cohortFilter,
+                includeParticipants: false
+              });
+
+              setLoadingProgress(80);
+              if (response.success) {
+                setAllProjects(response.data);
+                const total = response.pagination?.total || response.total || response.data.length;
+                setTotalProjects(total);
+              }
+              setLoadingProgress(100);
+              completeLoading();
             }
-            setLoadingProgress(100);
-            completeLoading();
           } catch (err) {
             console.error('Error fetching projects:', err);
             setLoadingProgress(100);
@@ -974,8 +1093,8 @@ function PersonDetailPage() {
             const response = await profilesAPI.getAll({
               limit: 100,
               search: debouncedPeopleSearch,
-              skills: peopleFilters.skills.length > 0 ? peopleFilters.skills : undefined,
-              industries: peopleFilters.industries.length > 0 ? peopleFilters.industries : undefined,
+              skills: peopleSkillsFilter.length > 0 ? peopleSkillsFilter : undefined,
+              industries: peopleIndustriesFilter.length > 0 ? peopleIndustriesFilter : undefined,
               openToWork: peopleFilters.openToWork ? true : undefined
             });
             
@@ -1012,9 +1131,10 @@ function PersonDetailPage() {
             const response = await projectsAPI.getAll({
               limit: 100,
               search: debouncedProjectSearch,
-              skills: projectFilters.skills.length > 0 ? projectFilters.skills : undefined,
-              sectors: projectFilters.sectors.length > 0 ? projectFilters.sectors : undefined,
-              cohort: cohortFilter
+              skills: projectSkillsFilter.length > 0 ? projectSkillsFilter : undefined,
+              sectors: projectSectorsFilter.length > 0 ? projectSectorsFilter : undefined,
+              cohort: cohortFilter,
+              includeParticipants: false // Don't need participants for list view
             });
             
             setLoadingProgress(80);
@@ -1045,11 +1165,22 @@ function PersonDetailPage() {
       isMounted = false;
       isFetchingRef.current = false;
     };
-  }, [gridPage, viewMode, debouncedPeopleSearch, debouncedProjectSearch, peopleFilters.skills, peopleFilters.industries, peopleFilters.openToWork, projectFilters.skills, projectFilters.sectors, layoutView, selectedInitiative, initiatives]);
+  }, [gridPage, viewMode, debouncedPeopleSearch, debouncedProjectSearch, peopleSkillsFilter, peopleIndustriesFilter, peopleFilters.openToWork, projectSkillsFilter, projectSectorsFilter, layoutView, selectedInitiative, initiatives]);
 
   // Fetch filters and initiatives once on mount - these are cached
   useEffect(() => {
+    // Only fetch once, unless filterSlug changes (for URL-based filtering)
+    if (filtersFetchedRef.current && !filterSlug) {
+      return;
+    }
+    
     const fetchFilters = async () => {
+      // Prevent concurrent fetches
+      if (filtersFetchedRef.current && !filterSlug) {
+        return;
+      }
+      filtersFetchedRef.current = true;
+      
       try {
         const [peopleFiltersData, projectFiltersData, initiativesData] = await Promise.all([
           profilesAPI.getFilters(),
@@ -1089,10 +1220,11 @@ function PersonDetailPage() {
         setAvailablePeopleFilters({ skills: [], industries: [] });
         setAvailableProjectFilters({ skills: [], sectors: [] });
         setInitiatives([]);
+        filtersFetchedRef.current = false; // Allow retry on error
       }
     };
     fetchFilters();
-  }, [filterSlug, viewMode]); // Re-run if filterSlug changes
+  }, [filterSlug]); // Only re-run if filterSlug changes - filters are shared between tabs
 
   useEffect(() => {
     // If no slug, default to grid view
@@ -1102,6 +1234,14 @@ function PersonDetailPage() {
       // Data will be fetched by the paginated useEffect
       return;
     }
+    
+    // Only increment fetch version when entering detail view, not on every filter change
+    // This prevents unnecessary version increments that could discard legitimate requests
+    const isEnteringDetailView = layoutView !== 'detail';
+    if (isEnteringDetailView) {
+      fetchVersionRef.current += 1;
+    }
+    const currentFetchVersion = fetchVersionRef.current;
     
     // If there's a slug, show detail view
     setLayoutView('detail');
@@ -1149,11 +1289,16 @@ function PersonDetailPage() {
             profilesAPI.getAll({
               limit: 100,
               search: debouncedPeopleSearch || undefined,
-              skills: peopleFilters.skills.length > 0 ? peopleFilters.skills : undefined,
-              industries: peopleFilters.industries.length > 0 ? peopleFilters.industries : undefined,
+              skills: peopleSkillsFilter.length > 0 ? peopleSkillsFilter : undefined,
+              industries: peopleIndustriesFilter.length > 0 ? peopleIndustriesFilter : undefined,
               openToWork: peopleFilters.openToWork ? true : undefined
             })
           ]);
+          
+          // Check if this response is stale (user navigated to another item)
+          if (currentFetchVersion !== fetchVersionRef.current) {
+            return; // Discard stale response
+          }
           
           // Extract results, handling both success and error cases
           const personData = personDataResult.status === 'fulfilled' 
@@ -1229,13 +1374,20 @@ function PersonDetailPage() {
           setLoadingProgress(100);
           completeLoading();
         } catch (err) {
+          // Check if this response is stale before updating error state
+          if (currentFetchVersion !== fetchVersionRef.current) {
+            return; // Discard stale error
+          }
           console.error('Error fetching person:', err);
           const errorMessage = err.response?.data?.error || err.response?.data?.message || 'Person not found';
           setError(errorMessage);
           setLoadingProgress(100);
           completeLoading();
         } finally {
-          setLoading(false);
+          // Only update loading state if this is still the current request
+          if (currentFetchVersion === fetchVersionRef.current) {
+            setLoading(false);
+          }
         }
       };
       fetchPersonAndList();
@@ -1262,15 +1414,21 @@ function PersonDetailPage() {
             : undefined;
           
           const [projectData, listData] = await Promise.all([
-            projectsAPI.getBySlug(slug),
+            projectsAPI.getBySlug(slug), // This already includes participants
             projectsAPI.getAll({
               limit: 100,
               search: debouncedProjectSearch || undefined,
-              skills: projectFilters.skills.length > 0 ? projectFilters.skills : undefined,
-              sectors: projectFilters.sectors.length > 0 ? projectFilters.sectors : undefined,
-              cohort: cohortFilter
+              skills: projectSkillsFilter.length > 0 ? projectSkillsFilter : undefined,
+              sectors: projectSectorsFilter.length > 0 ? projectSectorsFilter : undefined,
+              cohort: cohortFilter,
+              includeParticipants: false // Don't need participants for navigation list
             })
           ]);
+          
+          // Check if this response is stale (user navigated to another item)
+          if (currentFetchVersion !== fetchVersionRef.current) {
+            return; // Discard stale response
+          }
           
           setLoadingProgress(70);
           
@@ -1337,51 +1495,30 @@ function PersonDetailPage() {
           setLoadingProgress(100);
           completeLoading();
         } catch (err) {
+          // Check if this response is stale before updating error state
+          if (currentFetchVersion !== fetchVersionRef.current) {
+            return; // Discard stale error
+          }
           console.error('Error fetching project:', err);
           setError('Project not found');
           setLoadingProgress(100);
           completeLoading();
         } finally {
-          setLoading(false);
+          // Only update loading state if this is still the current request
+          if (currentFetchVersion === fetchVersionRef.current) {
+            setLoading(false);
+          }
         }
       };
       fetchProjectAndList();
     } else {
       setLoading(false);
     }
-  }, [slug, viewMode, debouncedPeopleSearch, debouncedProjectSearch, peopleFilters.skills, peopleFilters.industries, peopleFilters.openToWork, projectFilters.skills, projectFilters.sectors, selectedInitiative, initiatives]);
+  }, [slug, viewMode, debouncedPeopleSearch, debouncedProjectSearch, peopleSkillsFilter, peopleIndustriesFilter, peopleFilters.openToWork, projectSkillsFilter, projectSectorsFilter, selectedInitiative, initiatives]);
 
-  // Update currentIndex when slug or list changes
-  // Since allProfiles/allProjects are now filtered from API, we just need to find the index
-  useEffect(() => {
-    if (layoutView === 'detail' && slug) {
-      if (viewMode === 'people' && person) {
-        const index = allProfiles.findIndex(p => p.slug === slug);
-        if (index >= 0) {
-      setCurrentIndex(index);
-        } else if (allProfiles.length > 0) {
-          // Person not in current list, navigate to first in list
-          // This will trigger a re-fetch with the new slug
-          navigate(`/people/${allProfiles[0].slug}`);
-        } else {
-          // No results
-          setCurrentIndex(-1);
-        }
-      } else if (viewMode === 'projects' && project) {
-        const index = allProjects.findIndex(p => p.slug === slug);
-        if (index >= 0) {
-      setCurrentIndex(index);
-        } else if (allProjects.length > 0) {
-          // Project not in current list, navigate to first in list
-          // This will trigger a re-fetch with the new slug
-          navigate(`/projects/${allProjects[0].slug}`);
-        } else {
-          // No results
-          setCurrentIndex(-1);
-        }
-      }
-    }
-  }, [slug, allProfiles, allProjects, person, project, viewMode, layoutView, navigate]);
+  // NOTE: Duplicate currentIndex update useEffect was removed - it caused race conditions
+  // during rapid navigation. The main fetch useEffect above already handles currentIndex updates
+  // atomically when data is loaded, preventing index/content desync.
 
   // Hide scrollbar on body/html only when in 4x2 grid view (4 columns, exactly 8 items)
   useLayoutEffect(() => {
@@ -1878,6 +2015,7 @@ function PersonDetailPage() {
                   <div className="flex items-center">
                     <button
                       onClick={() => setGridPage(Math.max(0, gridPage - 1))}
+                      onMouseEnter={() => prefetchPage(-1)}
                       disabled={gridPage === 0 || Math.ceil(totalProjects / 8) <= 1}
                       className="page-nav-button page-nav-button-left h-[40px] w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center"
                       style={{
@@ -1890,7 +2028,12 @@ function PersonDetailPage() {
                       <ChevronLeft className="w-[30px] h-[30px]" strokeWidth={1.5} />
                     </button>
                     <div className="text-base text-gray-700 w-40 text-center bg-white rounded-md border-0 h-10 px-[15px] flex items-center justify-center">
-                      {totalProjects === 0 ? (
+                      {gridListLoading ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-300 border-t-[#4242ea]"></div>
+                          <span style={{marginLeft: '0.5em'}}>Loading...</span>
+                        </>
+                      ) : totalProjects === 0 ? (
                         <>
                           <span className="font-bold">0</span> <span style={{marginLeft: '0.25em'}}>Pages</span>
                         </>
@@ -1902,6 +2045,7 @@ function PersonDetailPage() {
                     </div>
                     <button
                       onClick={() => setGridPage(Math.min(Math.ceil(totalProjects / 8) - 1, gridPage + 1))}
+                      onMouseEnter={() => prefetchPage(1)}
                       disabled={gridPage >= Math.ceil(totalProjects / 8) - 1 || Math.ceil(totalProjects / 8) <= 1}
                       className="page-nav-button h-[40px] w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center"
                       style={{
@@ -1919,6 +2063,7 @@ function PersonDetailPage() {
                   <div className="flex items-center">
                     <button
                       onClick={() => setGridPage(Math.max(0, gridPage - 1))}
+                      onMouseEnter={() => prefetchPage(-1)}
                       disabled={gridPage === 0 || Math.ceil(totalProfiles / 8) <= 1}
                       className="page-nav-button page-nav-button-left h-[40px] w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center"
                       style={{
@@ -1931,7 +2076,12 @@ function PersonDetailPage() {
                       <ChevronLeft className="w-[30px] h-[30px]" strokeWidth={1.5} />
                     </button>
                     <div className="text-base text-gray-700 w-36 text-center bg-white rounded-md border-0 h-10 px-[15px] flex items-center justify-center">
-                      {totalProfiles === 0 ? (
+                      {gridListLoading ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-300 border-t-[#4242ea]"></div>
+                          <span style={{marginLeft: '0.5em'}}>Loading...</span>
+                        </>
+                      ) : totalProfiles === 0 ? (
                         <>
                           <span className="font-bold">0</span> <span style={{marginLeft: '0.25em'}}>Pages</span>
                         </>
@@ -1943,6 +2093,7 @@ function PersonDetailPage() {
                     </div>
                     <button
                       onClick={() => setGridPage(Math.min(Math.ceil(totalProfiles / 8) - 1, gridPage + 1))}
+                      onMouseEnter={() => prefetchPage(1)}
                       disabled={gridPage >= Math.ceil(totalProfiles / 8) - 1 || Math.ceil(totalProfiles / 8) <= 1}
                       className="page-nav-button h-[40px] w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center"
                       style={{
@@ -2640,27 +2791,50 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                     </div>
                   )}
                   
-                  <div 
-                    key={`projects-grid-${gridPage}`}
-                    className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-[18px] mb-0" 
-                    style={{
-                    animation: 'fadeIn 0.3s ease-in-out',
-                    gridAutoRows: 'auto',
-                    overflow: 'visible'
-                    }}
-                  >
-                    {/* In grid view, apply client-side filters */}
-                    {filteredProjects.map((proj, idx) => (
-                      <MemoizedProjectCard 
-                        key={proj.slug}
-                        proj={proj}
-                        onClick={() => {
-                          setLayoutView('detail');
-                          navigate(`/projects/${proj.slug}`);
-                        }}
-                      />
-                    ))}
-                  </div>
+                  {gridListLoading ? (
+                    // Show skeleton cards while loading
+                    <div 
+                      className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-[18px] mb-0" 
+                      style={{
+                        animation: 'fadeIn 0.3s ease-in-out',
+                        gridAutoRows: 'auto',
+                        overflow: 'visible'
+                      }}
+                    >
+                      {Array.from({ length: 8 }).map((_, idx) => (
+                        <ProjectCardSkeleton key={`project-skeleton-${idx}`} />
+                      ))}
+                    </div>
+                  ) : (
+                    <div 
+                      key={`projects-grid-${gridPage}`}
+                      className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-[18px] mb-0" 
+                      style={{
+                        animation: 'fadeIn 0.3s ease-in-out',
+                        gridAutoRows: 'auto',
+                        overflow: 'visible'
+                      }}
+                    >
+                      {/* In grid view, apply client-side filters */}
+                      {filteredProjects.map((proj, idx) => (
+                        <MemoizedProjectCard
+                          key={proj.slug}
+                          proj={proj}
+                          onClick={() => {
+                            setLayoutView('detail');
+                            navigate(`/projects/${proj.slug}`);
+                          }}
+                        />
+                      ))}
+                    </div>
+                  )}
+                  {/* Loading more indicator for progressive loading */}
+                  {loadingMore && (
+                    <div className="flex items-center justify-center py-6 text-gray-500">
+                      <div className="animate-spin rounded-full h-5 w-5 border-2 border-gray-300 border-t-[#4242ea] mr-3"></div>
+                      <span>Loading more projects...</span>
+                    </div>
+                  )}
                 </>
               )}
 
@@ -2682,7 +2856,17 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
               </button>
               
               <div className="text-base text-gray-700 w-28 text-center bg-white rounded-md border-0 h-10 px-[15px] flex items-center justify-center">
-                {totalProjects === 0 ? (
+                {gridListLoading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-300 border-t-[#4242ea]"></div>
+                    <span style={{marginLeft: '0.5em'}}>Loading...</span>
+                  </>
+                ) : gridListLoading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-300 border-t-[#4242ea]"></div>
+                    <span style={{marginLeft: '0.5em'}}>Loading...</span>
+                  </>
+                ) : totalProjects === 0 ? (
                   <>
                     <span className="font-bold">0</span> <span style={{marginLeft: '0.25em'}}>Pages</span>
                   </>
@@ -2741,27 +2925,43 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                   </button>
                 </div>
               ) : (
-                <div 
-                  key={`people-grid-${gridPage}`}
-                  className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-[18px] mb-0" 
-                  style={{
-                  animation: 'fadeIn 0.3s ease-in-out',
-                  gridAutoRows: 'auto',
-                  overflow: 'visible'
-                  }}
-                >
-                  {/* In grid view, apply client-side filters */}
-                  {filteredProfiles.map((prof, idx) => (
-                    <MemoizedProfileCard 
-                      key={prof.slug}
-                      prof={prof}
-                      onClick={() => {
-                        setLayoutView('detail');
-                        navigate(`/people/${prof.slug}`);
-                      }}
-                    />
-                  ))}
-                </div>
+                gridListLoading ? (
+                  // Show skeleton cards while loading
+                  <div 
+                    className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-[18px] mb-0" 
+                    style={{
+                      animation: 'fadeIn 0.3s ease-in-out',
+                      gridAutoRows: 'auto',
+                      overflow: 'visible'
+                    }}
+                  >
+                    {Array.from({ length: 8 }).map((_, idx) => (
+                      <PersonCardSkeleton key={`person-skeleton-${idx}`} />
+                    ))}
+                  </div>
+                ) : (
+                  <div 
+                    key={`people-grid-${gridPage}`}
+                    className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-[18px] mb-0" 
+                    style={{
+                      animation: 'fadeIn 0.3s ease-in-out',
+                      gridAutoRows: 'auto',
+                      overflow: 'visible'
+                    }}
+                  >
+                    {/* In grid view, apply client-side filters */}
+                    {filteredProfiles.map((prof, idx) => (
+                      <MemoizedProfileCard 
+                        key={prof.slug}
+                        prof={prof}
+                        onClick={() => {
+                          setLayoutView('detail');
+                          navigate(`/people/${prof.slug}`);
+                        }}
+                      />
+                    ))}
+                  </div>
+                )
               )}
 
             {/* Mobile Navigation - Bottom Fixed for People Grid */}
@@ -2782,7 +2982,12 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
               </button>
               
               <div className="text-base text-gray-700 w-28 text-center bg-white rounded-md border-0 h-10 px-[15px] flex items-center justify-center">
-                {totalProfiles === 0 ? (
+                {gridListLoading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-300 border-t-[#4242ea]"></div>
+                    <span style={{marginLeft: '0.5em'}}>Loading...</span>
+                  </>
+                ) : totalProfiles === 0 ? (
                   <>
                     <span className="font-bold">0</span> <span style={{marginLeft: '0.25em'}}>Pages</span>
                   </>
@@ -2854,16 +3059,17 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
               <CardContent className="p-6">
                 {viewMode === 'projects' && (
                   <div>
+                    {/* Virtual scrolling disabled until react-window is installed: npm install react-window */}
                     {filteredProjects.map((proj, index) => (
-                      <div key={proj.slug}>
-                        {index > 0 && <div className="border-t border-gray-200 my-0"></div>}
-                        <div 
-                          onClick={() => {
-                            setLayoutView('detail');
-                            navigate(`/projects/${proj.slug}`);
-                          }}
-                          className="flex items-center gap-6 p-4 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
-                        >
+                        <div key={proj.slug}>
+                          {index > 0 && <div className="border-t border-gray-200 my-0"></div>}
+                          <div 
+                            onClick={() => {
+                              setLayoutView('detail');
+                              navigate(`/projects/${proj.slug}`);
+                            }}
+                            className="flex items-center gap-6 p-4 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
+                          >
                         {/* Project Icon/Image */}
                         <div className="w-20 h-20 rounded-full overflow-hidden flex-shrink-0 bg-gradient-to-br from-orange-500 to-red-500">
                           {(proj.icon_url || proj.main_image_url) ? (
@@ -3096,6 +3302,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
               viewMode={viewMode}
               isDetail={true}
               hasContent={!!(person || project)}
+              isLoading={loading && !(person || project)}
             />
             <PageNavButton
               onClick={handleNext}

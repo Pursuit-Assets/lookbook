@@ -118,6 +118,79 @@ const initiativesRouter = require('./routes/initiatives');
 
 // Mount routes
 app.use('/api/auth', authRouter);
+
+// Pre-warm cache on startup (for faster initial loads)
+async function preWarmCache() {
+  const http = require('http');
+
+  // Helper to make a cache-warming request
+  const warmRequest = (url, description) => {
+    return new Promise((resolve) => {
+      const startTime = Date.now();
+      const testRequest = http.get(url, (res) => {
+        let data = '';
+        res.on('data', (chunk) => { data += chunk; });
+        res.on('end', () => {
+          const warmTime = Date.now() - startTime;
+          try {
+            const result = JSON.parse(data);
+            if (result.success) {
+              console.log(`   ✓ ${description} cached in ${warmTime}ms (${result.data?.length || 0} items)`);
+            }
+          } catch (e) {
+            // Ignore parse errors
+          }
+          resolve();
+        });
+      });
+      testRequest.on('error', () => resolve());
+      testRequest.setTimeout(15000, () => {
+        testRequest.destroy();
+        resolve();
+      });
+    });
+  };
+
+  try {
+    console.log('🔥 Pre-warming project cache...');
+    const startTime = Date.now();
+
+    // 1. Warm default projects query
+    await warmRequest(
+      `http://localhost:${PORT}/api/projects?limit=8&offset=0&includeParticipants=false`,
+      'Default projects (first page)'
+    );
+
+    // 2. Warm initiative cohort filters
+    try {
+      const { pool } = require('./db/dbConfig');
+      const initiativesResult = await pool.query(
+        'SELECT DISTINCT cohort_value FROM lookbook_initiatives WHERE is_active = true AND cohort_value IS NOT NULL'
+      );
+
+      if (initiativesResult.rows.length > 0) {
+        console.log(`   Warming ${initiativesResult.rows.length} initiative cohorts...`);
+        for (const row of initiativesResult.rows) {
+          const cohort = row.cohort_value;
+          await warmRequest(
+            `http://localhost:${PORT}/api/projects?limit=8&offset=0&cohort=${encodeURIComponent(cohort)}&includeParticipants=false`,
+            `Cohort: ${cohort}`
+          );
+        }
+      }
+    } catch (dbErr) {
+      console.warn('   ⚠️  Could not warm initiative caches:', dbErr.message);
+    }
+
+    const totalTime = Date.now() - startTime;
+    console.log(`✅ Cache pre-warming completed in ${totalTime}ms`);
+  } catch (error) {
+    console.warn('⚠️  Cache pre-warming failed (non-critical):', error.message);
+  }
+}
+
+// Pre-warm cache after server starts (don't block startup)
+setTimeout(preWarmCache, 3000); // Wait 3 seconds for server to fully start
 app.use('/api/profiles', profilesRouter);
 app.use('/api/projects', projectsRouter);
 app.use('/api/search', searchRouter);

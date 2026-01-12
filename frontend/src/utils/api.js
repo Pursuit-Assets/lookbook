@@ -69,7 +69,30 @@ api.interceptors.response.use(
   }
 );
 
-// Cached GET helper with request deduplication
+// Retry helper with exponential backoff
+const retryRequest = async (requestFn, maxRetries = 3, delay = 1000) => {
+  let lastError;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await requestFn();
+    } catch (error) {
+      lastError = error;
+      // Don't retry on 4xx errors (client errors)
+      if (error.response && error.response.status >= 400 && error.response.status < 500) {
+        throw error;
+      }
+      // Don't retry on last attempt
+      if (attempt === maxRetries) {
+        break;
+      }
+      // Exponential backoff: 1s, 2s, 4s
+      await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, attempt)));
+    }
+  }
+  throw lastError;
+};
+
+// Cached GET helper with request deduplication and retry logic
 const cachedGet = async (url, cacheKey, ttl = 60000) => {
   // Check cache first
   const cached = apiCache.get(cacheKey);
@@ -83,14 +106,51 @@ const cachedGet = async (url, cacheKey, ttl = 60000) => {
     return pending;
   }
   
-  // Make the request and cache it
-  const requestPromise = api.get(url).then(result => {
+  // Make the request with retry logic and cache it
+  const requestPromise = retryRequest(() => api.get(url)).then(result => {
     apiCache.set(cacheKey, result, ttl);
     return result;
+  }).catch(error => {
+    // Remove pending request on error so it can be retried
+    apiCache.pendingRequests.delete(cacheKey);
+    throw error;
   });
   
   apiCache.setPendingRequest(cacheKey, requestPromise);
   return requestPromise;
+};
+
+// Cached GET with params helper - generates cache key from URL + params
+const cachedGetWithParams = async (url, params = {}, cacheKeyPrefix, ttl = 120000) => {
+  // Generate cache key from URL and sorted params
+  const sortedParams = Object.keys(params)
+    .filter(key => params[key] !== undefined && params[key] !== null && params[key] !== '')
+    .sort()
+    .map(key => {
+      const value = params[key];
+      if (Array.isArray(value)) {
+        return `${key}=${value.sort().join(',')}`;
+      }
+      return `${key}=${value}`;
+    })
+    .join('&');
+  const cacheKey = `${cacheKeyPrefix}:${url}${sortedParams ? `?${sortedParams}` : ''}`;
+  
+  // Build query string properly
+  const queryParams = new URLSearchParams();
+  Object.keys(params).forEach(key => {
+    if (params[key] !== undefined && params[key] !== null && params[key] !== '') {
+      if (Array.isArray(params[key])) {
+        params[key].forEach(val => queryParams.append(key, val));
+      } else {
+        queryParams.append(key, params[key]);
+      }
+    }
+  });
+  const queryString = queryParams.toString();
+  const fullUrl = `${url}${queryString ? `?${queryString}` : ''}`;
+  
+  return cachedGet(fullUrl, cacheKey, ttl);
 };
 
 // =====================================================
@@ -112,12 +172,37 @@ export const profilesAPI = {
 // =====================================================
 
 export const projectsAPI = {
-  getAll: (filters = {}) => api.get('/projects', { params: filters }),
-  getBySlug: (slug) => cachedGet(`/projects/${slug}`, `project-${slug}`, 120000), // Cache for 2 minutes
+  // Use cached GET with params for list views - cache for 5 minutes
+  // Only include participants when explicitly requested (for detail views)
+  getAll: (filters = {}) => {
+    // For detail views that need participants, don't cache (always fresh)
+    if (filters.includeParticipants) {
+      return api.get('/projects', { params: filters });
+    }
+    // For list/grid views, use caching with deduplication (5 min cache)
+    return cachedGetWithParams('/projects', filters, 'projects-list', 300000);
+  },
+  getBySlug: (slug) => cachedGet(`/projects/${slug}`, `project-${slug}`, 300000), // Cache for 5 minutes
   getFilters: () => cachedGet('/projects/filters', 'projects-filters', 300000), // Cache for 5 minutes
-  create: (data) => api.post('/projects', data),
-  update: (slug, data) => api.put(`/projects/${slug}`, data),
-  delete: (slug) => api.delete(`/projects/${slug}`),
+  create: (data) => {
+    // Invalidate cache on create
+    apiCache.clear();
+    return api.post('/projects', data);
+  },
+  update: (slug, data) => {
+    // Invalidate cache on update
+    apiCache.delete(`project-${slug}`);
+    // Clear list cache since project might have changed
+    const keysToDelete = apiCache.getKeys().filter(key => key.startsWith('projects-list:'));
+    keysToDelete.forEach(key => apiCache.delete(key));
+    return api.put(`/projects/${slug}`, data);
+  },
+  delete: (slug) => {
+    // Invalidate cache on delete
+    apiCache.delete(`project-${slug}`);
+    apiCache.clear(); // Clear all project caches
+    return api.delete(`/projects/${slug}`);
+  },
   addParticipant: (slug, data) => api.post(`/projects/${slug}/participants`, data),
   removeParticipant: (slug, profileSlug) => api.delete(`/projects/${slug}/participants/${profileSlug}`),
 };

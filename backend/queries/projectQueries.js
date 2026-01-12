@@ -38,7 +38,62 @@ const getAllProjects = async (filters = {}) => {
     ) as participants,
   ` : `NULL as participants,`;
   
-  let query = `
+  // Build WHERE clause conditions
+  const whereConditions = ['p.status = $1'];
+  const params = [status];
+  let paramCount = 2;
+  
+  // Text search (title, summary) - use index-friendly search if possible
+  if (search) {
+    whereConditions.push(`(
+      p.title ILIKE $${paramCount} OR 
+      p.summary ILIKE $${paramCount}
+    )`);
+    params.push(`%${search}%`);
+    paramCount++;
+  }
+  
+  // Skills filter (must have ALL specified skills) - uses GIN index
+  if (skills && skills.length > 0) {
+    whereConditions.push(`p.skills @> $${paramCount}::text[]`);
+    params.push(skills);
+    paramCount++;
+  }
+  
+  // Sectors filter (must have ALL specified sectors) - uses GIN index
+  if (sectors && sectors.length > 0) {
+    whereConditions.push(`p.sectors @> $${paramCount}::text[]`);
+    params.push(sectors);
+    paramCount++;
+  }
+  
+  // Cohort filter - uses index
+  if (cohort) {
+    if (cohort === 'earlier') {
+      whereConditions.push(`(p.cohort < '2021' OR p.cohort IS NULL)`);
+    } else {
+      whereConditions.push(`p.cohort = $${paramCount}`);
+      params.push(cohort);
+      paramCount++;
+    }
+  }
+  
+  // Has demo video filter
+  if (hasDemoVideo !== undefined) {
+    whereConditions.push(`(p.demo_video_url IS ${hasDemoVideo ? 'NOT NULL' : 'NULL'})`);
+  }
+  
+  const whereClause = whereConditions.join(' AND ');
+  
+  // Optimize ORDER BY clause: When filtering by cohort, ensure we use the composite index
+  // The composite index (status, cohort, created_at DESC) can satisfy both WHERE and ORDER BY
+  // PostgreSQL will automatically use the most efficient index available
+  const orderByClause = 'ORDER BY p.created_at DESC';
+  
+  // Use window function for count (faster than CTE for large datasets)
+  // This avoids materializing the entire CTE before counting
+  // When cohort filter is present, PostgreSQL can use idx_lookbook_projects_active_cohort_created
+  const dataQuery = `
     SELECT 
       p.id as project_id,
       p.slug,
@@ -63,60 +118,56 @@ const getAllProjects = async (filters = {}) => {
       ${participantsQuery}
       COUNT(*) OVER() as total_count
     FROM lookbook_projects p
-    WHERE p.status = $1
+    WHERE ${whereClause}
+    ${orderByClause}
+    LIMIT $${paramCount} OFFSET $${paramCount + 1}
   `;
   
-  const params = [status];
-  let paramCount = 2;
+  // Execute query with timeout protection
+  const startTime = Date.now();
   
-  // Text search (title, summary)
-  if (search) {
-    query += ` AND (
-      p.title ILIKE $${paramCount} OR 
-      p.summary ILIKE $${paramCount}
-    )`;
-    params.push(`%${search}%`);
-    paramCount++;
-  }
+  // Create timeout promise (90 seconds for remote databases - network latency is the issue)
+  // Note: This is high because of network latency to remote database, not query complexity
+  const timeoutPromise = new Promise((_, reject) => {
+    setTimeout(() => reject(new Error('Query timeout after 90 seconds')), 90000);
+  });
   
-  // Skills filter (must have ALL specified skills)
-  if (skills && skills.length > 0) {
-    query += ` AND p.skills @> $${paramCount}::text[]`;
-    params.push(skills);
-    paramCount++;
-  }
-  
-  // Sectors filter (must have ALL specified sectors)
-  if (sectors && sectors.length > 0) {
-    query += ` AND p.sectors @> $${paramCount}::text[]`;
-    params.push(sectors);
-    paramCount++;
-  }
-  
-  // Cohort filter
-  if (cohort) {
-    if (cohort === 'earlier') {
-      query += ` AND (p.cohort < '2021' OR p.cohort IS NULL)`;
+  let result;
+  try {
+    // Execute single query with window function (faster than CTE for large result sets)
+    result = await Promise.race([
+      pool.query(dataQuery, [...params, limit, offset]),
+      timeoutPromise
+    ]);
+  } catch (error) {
+    const queryTime = Date.now() - startTime;
+    if (error.message.includes('timeout')) {
+      console.error(`❌ Query TIMEOUT after ${queryTime}ms - network latency issue`);
+      throw new Error('Database query timed out. Please try again or contact support if this persists.');
     } else {
-      query += ` AND p.cohort = $${paramCount}`;
-      params.push(cohort);
-      paramCount++;
+      console.error(`❌ Query failed after ${queryTime}ms:`, error.message);
+      throw error;
     }
   }
   
-  // Has demo video filter
-  if (hasDemoVideo !== undefined) {
-    query += ` AND (p.demo_video_url IS ${hasDemoVideo ? 'NOT NULL' : 'NULL'})`;
+  const queryTime = Date.now() - startTime;
+  const total = result.rows.length > 0 ? parseInt(result.rows[0].total_count) : 0;
+  
+  // Projects are already in the correct format
+  const projects = result.rows;
+  
+  // Log slow queries (only warn for very slow queries)
+  if (queryTime > 5000) {
+    console.warn(`⚠️  SLOW QUERY: ${queryTime}ms for getAllProjects`);
+    console.warn(`   Filters: search=${search || 'none'}, skills=${skills?.length || 0}, sectors=${sectors?.length || 0}, cohort=${cohort || 'none'}`);
+    console.warn(`   Returned: ${projects.length} rows, total: ${total}`);
+  } else if (queryTime > 1000) {
+    console.log(`📊 getAllProjects query: ${queryTime}ms (${projects.length} rows, total: ${total})`);
   }
   
-  query += ` ORDER BY p.created_at DESC LIMIT $${paramCount} OFFSET $${paramCount + 1}`;
-  params.push(limit, offset);
-  
-  const result = await pool.query(query, params);
-  
   return {
-    projects: result.rows,
-    total: result.rows.length > 0 ? parseInt(result.rows[0].total_count) : 0,
+    projects,
+    total,
     limit,
     offset
   };

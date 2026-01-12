@@ -5,6 +5,29 @@ const express = require('express');
 const router = express.Router();
 const initiativeQueries = require('../queries/initiativeQueries');
 
+// Simple in-memory cache for initiatives (to reduce database load)
+const initiativeCache = new Map();
+const CACHE_TTL = 10 * 60 * 1000; // 10 minutes (initiatives don't change frequently)
+
+function getCacheKey(includeInactive) {
+  return `initiatives_${includeInactive ? 'all' : 'active'}`;
+}
+
+function getCachedInitiatives(cacheKey) {
+  const cached = initiativeCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.data;
+  }
+  return null;
+}
+
+function setCachedInitiatives(cacheKey, data) {
+  initiativeCache.set(cacheKey, {
+    data,
+    timestamp: Date.now()
+  });
+}
+
 // Helper to generate slug from name
 const generateSlug = (name) => {
   return name
@@ -20,22 +43,36 @@ const generateSlug = (name) => {
 router.get('/', async (req, res) => {
   try {
     const includeInactive = req.query.includeInactive === 'true';
+    
+    // Check cache first
+    const cacheKey = getCacheKey(includeInactive);
+    const cachedResult = getCachedInitiatives(cacheKey);
+    if (cachedResult) {
+      console.log(`📦 Cache HIT for initiatives query`);
+      return res.json({
+        success: true,
+        data: cachedResult
+      });
+    }
+    
+    // Cache miss - fetch from database
+    console.log(`📦 Cache MISS for initiatives query - fetching from database`);
+    const startTime = Date.now();
+    
+    // getAllInitiatives now returns initiatives with project_count already included
+    // This avoids the N+1 query problem by using a single JOIN query
     const initiatives = await initiativeQueries.getAllInitiatives(includeInactive);
     
-    // Get project counts for each initiative
-    const initiativesWithCounts = await Promise.all(
-      initiatives.map(async (initiative) => {
-        const projectCount = await initiativeQueries.getProjectCountByInitiative(initiative.cohort_value);
-        return {
-          ...initiative,
-          project_count: projectCount
-        };
-      })
-    );
+    const queryTime = Date.now() - startTime;
+    
+    // Cache the result
+    setCachedInitiatives(cacheKey, initiatives);
+    
+    console.log(`✅ Fetched ${initiatives.length} initiatives in ${queryTime}ms (cached for next request)`);
     
     res.json({
       success: true,
-      data: initiativesWithCounts
+      data: initiatives
     });
   } catch (error) {
     console.error('Error fetching initiatives:', error);
@@ -108,6 +145,9 @@ router.post('/', async (req, res) => {
       isActive
     });
     
+    // Clear cache when initiative is created
+    initiativeCache.clear();
+    
     res.status(201).json({
       success: true,
       data: initiative
@@ -153,6 +193,9 @@ router.put('/:id', async (req, res) => {
       });
     }
     
+    // Clear cache when initiative is updated
+    initiativeCache.clear();
+    
     res.json({
       success: true,
       data: initiative
@@ -190,6 +233,9 @@ router.delete('/:id', async (req, res) => {
         error: 'Initiative not found'
       });
     }
+    
+    // Clear cache when initiative is deleted
+    initiativeCache.clear();
     
     res.json({
       success: true,

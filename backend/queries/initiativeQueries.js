@@ -8,25 +8,30 @@ const { pool } = require('../db/dbConfig');
 // =====================================================
 
 const getAllInitiatives = async (includeInactive = false) => {
+  // Optimized query: Get initiatives with project counts in a single query
+  // This avoids N+1 query problem by using a LEFT JOIN and GROUP BY
   let query = `
     SELECT 
-      id,
-      slug,
-      name,
-      description,
-      cohort_value,
-      display_order,
-      is_active,
-      created_at,
-      updated_at
-    FROM lookbook_initiatives
+      i.id,
+      i.slug,
+      i.name,
+      i.description,
+      i.cohort_value,
+      i.display_order,
+      i.is_active,
+      i.created_at,
+      i.updated_at,
+      COALESCE(COUNT(p.id), 0)::integer as project_count
+    FROM lookbook_initiatives i
+    LEFT JOIN lookbook_projects p ON p.cohort = i.cohort_value AND p.status = 'active'
   `;
   
   if (!includeInactive) {
-    query += ` WHERE is_active = true`;
+    query += ` WHERE i.is_active = true`;
   }
   
-  query += ` ORDER BY display_order ASC, created_at DESC`;
+  query += ` GROUP BY i.id, i.slug, i.name, i.description, i.cohort_value, i.display_order, i.is_active, i.created_at, i.updated_at
+    ORDER BY i.display_order ASC, i.created_at DESC`;
   
   const result = await pool.query(query);
   return result.rows;

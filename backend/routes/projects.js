@@ -6,6 +6,39 @@ const router = express.Router();
 const projectQueries = require('../queries/projectQueries');
 const { pool } = require('../db/dbConfig');
 
+// Simple in-memory cache for projects (to reduce database load)
+const projectCache = new Map();
+const CACHE_TTL = 10 * 60 * 1000; // 10 minutes (projects don't change frequently)
+
+function getCacheKey(filters) {
+  return JSON.stringify({
+    search: filters.search || '',
+    skills: (filters.skills || []).sort().join(','),
+    sectors: (filters.sectors || []).sort().join(','),
+    cohort: filters.cohort || '',
+    hasDemoVideo: filters.hasDemoVideo,
+    status: filters.status || 'active',
+    limit: filters.limit || 50,
+    offset: filters.offset || 0,
+    includeParticipants: filters.includeParticipants || false
+  });
+}
+
+function getCachedProjects(cacheKey) {
+  const cached = projectCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.data;
+  }
+  return null;
+}
+
+function setCachedProjects(cacheKey, data) {
+  projectCache.set(cacheKey, {
+    data,
+    timestamp: Date.now()
+  });
+}
+
 // =====================================================
 // GET /api/projects
 // Get all projects with optional filtering
@@ -26,6 +59,9 @@ router.get('/', async (req, res) => {
     } = req.query;
     
     // Parse filters
+    // includeParticipants defaults to false for performance (only include when explicitly requested)
+    const includeParticipants = req.query.includeParticipants === 'true';
+    
     const filters = {
       search,
       skills: skills ? (Array.isArray(skills) ? skills : skills.split(',')) : undefined,
@@ -35,24 +71,85 @@ router.get('/', async (req, res) => {
       status: status || 'active',
       limit: parseInt(limit) || 50,
       offset: page ? (parseInt(page) - 1) * (parseInt(limit) || 50) : parseInt(offset) || 0,
-      includeParticipants: true // Always include participants for display
+      includeParticipants // Only include participants when explicitly requested (for detail views)
     };
     
-    const result = await projectQueries.getAllProjects(filters);
+    // Check cache first
+    const cacheKey = getCacheKey(filters);
+    const cachedResult = getCachedProjects(cacheKey);
+    if (cachedResult) {
+      console.log(`📦 Cache HIT for projects query`);
+      return res.json({
+        success: true,
+        data: cachedResult.projects,
+        pagination: {
+          total: cachedResult.total,
+          limit: cachedResult.limit,
+          offset: cachedResult.offset,
+          page: Math.floor(cachedResult.offset / cachedResult.limit) + 1,
+          totalPages: Math.ceil(cachedResult.total / cachedResult.limit)
+        }
+      });
+    }
     
-    res.json({
-      success: true,
-      data: result.projects,
-      pagination: {
-        total: result.total,
-        limit: result.limit,
-        offset: result.offset,
-        page: Math.floor(result.offset / result.limit) + 1,
-        totalPages: Math.ceil(result.total / result.limit)
+    // Cache miss - fetch from database
+    console.log(`📦 Cache MISS for projects query - fetching from database`);
+    const startTime = Date.now();
+    
+    let result;
+    try {
+      result = await projectQueries.getAllProjects(filters);
+      const queryTime = Date.now() - startTime;
+      
+      // Cache the result (only if successful)
+      setCachedProjects(cacheKey, result);
+      
+      console.log(`✅ Fetched ${result.projects.length} projects in ${queryTime}ms (cached for next request)`);
+      
+      res.json({
+        success: true,
+        data: result.projects,
+        pagination: {
+          total: result.total,
+          limit: result.limit,
+          offset: result.offset,
+          page: Math.floor(result.offset / result.limit) + 1,
+          totalPages: Math.ceil(result.total / result.limit)
+        }
+      });
+    } catch (error) {
+      const queryTime = Date.now() - startTime;
+      console.error(`❌ Error fetching projects after ${queryTime}ms:`, error.message);
+      
+      // If timeout, check if we have stale cache we can serve
+      if (error.message.includes('timeout') || error.message.includes('TIMEOUT')) {
+        const staleCache = projectCache.get(cacheKey);
+        if (staleCache) {
+          console.log(`⚠️  Serving stale cache due to timeout (${Math.floor((Date.now() - staleCache.timestamp) / 1000)}s old)`);
+          return res.json({
+            success: true,
+            data: staleCache.data.projects,
+            pagination: {
+              total: staleCache.data.total,
+              limit: staleCache.data.limit,
+              offset: staleCache.data.offset,
+              page: Math.floor(staleCache.data.offset / staleCache.data.limit) + 1,
+              totalPages: Math.ceil(staleCache.data.total / staleCache.data.limit)
+            },
+            _cached: true,
+            _stale: true
+          });
+        }
       }
-    });
+      
+      res.status(500).json({ 
+        success: false,
+        error: 'Failed to fetch projects',
+        message: error.message 
+      });
+    }
   } catch (error) {
-    console.error('Error fetching projects:', error);
+    console.error('Error in projects route:', error);
     res.status(500).json({ 
       success: false,
       error: 'Failed to fetch projects',
