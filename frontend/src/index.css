@@ -740,3 +740,17 @@ html.grid-view-page::-webkit-scrollbar {
   }
 }
 
+/* Contact button pulse animation */
+.contact-button {
+  animation: contactPulse 3s ease-in-out infinite;
+}
+
+@keyframes contactPulse {
+  0%, 100% {
+    box-shadow: 0 4px 15px rgba(66, 66, 234, 0.3);
+  }
+  50% {
+    box-shadow: 0 6px 25px rgba(66, 66, 234, 0.5);
+  }
+}
+

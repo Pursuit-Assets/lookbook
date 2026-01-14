@@ -16,7 +16,8 @@ import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { Linkedin, Globe, Camera, Code, Rocket, Zap, Lightbulb, Target, Square, Grid3x3, List, ChevronLeft, ChevronRight, Menu, X, Frown, Search, Building2, Briefcase, Store, Sparkles, Sprout } from 'lucide-react';
+import { Linkedin, Globe, Camera, Code, Rocket, Zap, Lightbulb, Target, Square, Grid3x3, List, ChevronLeft, ChevronRight, Menu, X, Frown, Search, Building2, Briefcase, Store, Sparkles, Sprout, MessageCircle } from 'lucide-react';
+import ContactModal from '../components/ContactModal';
 
 // Custom hook for debounced value
 const useDebounce = (value, delay) => {
@@ -692,8 +693,9 @@ function PersonDetailPage() {
   const [gridPage, setGridPage] = useState(0); // For grid pagination
   const [totalProfiles, setTotalProfiles] = useState(0); // Total count from server
   const [totalProjects, setTotalProjects] = useState(0); // Total count from server
-  const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For project carousel
-  
+const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For project carousel
+  const [contactModalOpen, setContactModalOpen] = useState(false); // For contact modal
+
   // Track previous pathname to detect navigation away/back
   const prevPathnameRef = useRef(location.pathname);
   const isInitialMountRef = useRef(true);
@@ -2698,12 +2700,32 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                 </div>
               )}
               
-              {/* Contact Section */}
+              {/* Contact Button */}
               <Separator className="bg-white" />
-              <div className="space-y-1">
-                <p className="text-sm font-bold">Contact for Resume / Hiring Interest</p>
-                <p className="text-sm font-semibold">Devika Gopal Agge</p>
-                <p className="text-sm">devika@pursuit.org</p>
+              <div className="pt-2">
+                <button
+                  onClick={() => setContactModalOpen(true)}
+                  className="contact-button w-full py-3 px-4 text-white font-semibold rounded-xl shadow-lg transition-all duration-300 relative overflow-hidden group flex items-center justify-center gap-2"
+                  style={{
+                    background: 'linear-gradient(to right, #4242ea, #3535d1)',
+                  }}
+                  onMouseOver={(e) => {
+                    e.currentTarget.style.background = 'linear-gradient(to right, #3535d1, #2828b8)';
+                    e.currentTarget.style.transform = 'scale(1.02)';
+                    e.currentTarget.style.boxShadow = '0 10px 25px rgba(66, 66, 234, 0.5)';
+                  }}
+                  onMouseOut={(e) => {
+                    e.currentTarget.style.background = 'linear-gradient(to right, #4242ea, #3535d1)';
+                    e.currentTarget.style.transform = 'scale(1)';
+                    e.currentTarget.style.boxShadow = '0 4px 15px rgba(66, 66, 234, 0.3)';
+                  }}
+                >
+                  <MessageCircle className="w-5 h-5" />
+                  <span>Get in Touch</span>
+                </button>
+                <p className="mt-2 text-xs text-center text-black">
+                  For hiring, resumes & partnerships
+                </p>
               </div>
             </div>
         </div>
@@ -3939,6 +3961,12 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
           )}
         </div>
       </div>
+
+      {/* Contact Modal */}
+      <ContactModal
+        isOpen={contactModalOpen}
+        onClose={() => setContactModalOpen(false)}
+      />
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import Image from 'next/image';
+import ContactButton from '@/components/ContactButton';
 
 export default function DemoProjectsPage() {
   const projects = [
@@ -162,14 +163,7 @@ export default function DemoProjectsPage() {
           </div>
         </div>
 
-        <div className="mt-12 pt-8 border-t border-neutral-200">
-          <h3 className="mb-2 text-sm font-semibold">Contact for Resume / Hiring Interest</h3>
-          <p className="text-sm text-neutral-600 mb-1">Timothy Asprec</p>
-          <a href="mailto:timothyasprec@pursuit.org" className="text-sm text-blue-600 hover:underline">
-            timothyasprec@pursuit.org
-          </a>
-          <p className="mt-2 text-xs text-neutral-500">Unauthorized contact violates Fair privacy policies</p>
-        </div>
+        <ContactButton />
       </aside>
 
       {/* Main Content */}

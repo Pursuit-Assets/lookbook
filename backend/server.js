@@ -115,6 +115,7 @@ const sharepackRouter = require('./routes/sharepack');
 const aiRouter = require('./routes/ai');
 const taxonomyRouter = require('./routes/taxonomy');
 const initiativesRouter = require('./routes/initiatives');
+const contactRouter = require('./routes/contact');
 
 // Mount routes
 app.use('/api/auth', authRouter);
@@ -198,6 +199,7 @@ app.use('/api/sharepack', sharepackRouter);
 app.use('/api/ai', aiRouter);
 app.use('/api/taxonomy', taxonomyRouter);
 app.use('/api/initiatives', initiativesRouter);
+app.use('/api/contact', contactRouter);
 
 // =====================================================
 // ERROR HANDLING
