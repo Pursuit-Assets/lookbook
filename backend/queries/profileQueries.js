@@ -18,7 +18,7 @@ const getAllProfiles = async (filters = {}) => {
   // Text search (name, title, skills)
   if (search) {
     conditions.push(`(
-      (u.first_name || ' ' || u.last_name) ILIKE $${paramCount} OR 
+      COALESCE(u.first_name || ' ' || u.last_name, initcap(replace(p.slug, '-', ' '))) ILIKE $${paramCount} OR 
       p.title ILIKE $${paramCount} OR 
       EXISTS (
         SELECT 1 FROM unnest(p.skills) AS skill 
@@ -74,16 +74,16 @@ const getAllProfiles = async (filters = {}) => {
         p.website_url,
         p.x_url,
         p.featured,
-        u.first_name || ' ' || u.last_name as name,
-        u.email,
-        u.first_name as sort_name,
+        COALESCE(u.first_name || ' ' || u.last_name, initcap(replace(p.slug, '-', ' '))) as name,
+        u.email as email,
+        COALESCE(u.first_name || ' ' || u.last_name, initcap(replace(p.slug, '-', ' '))) as sort_name,
         (
           SELECT COUNT(*)::int
           FROM lookbook_project_participants pp
           WHERE pp.profile_id = p.id
         ) as project_count
       FROM lookbook_profiles p
-      JOIN users u ON p.user_id = u.user_id
+      LEFT JOIN users u ON p.user_id = u.user_id
       ${whereClause}
     ),
     profile_count AS (
@@ -118,8 +118,8 @@ const getProfileBySlug = async (slug) => {
   const query = `
     SELECT 
       p.*,
-      u.first_name || ' ' || u.last_name as name,
-      u.email,
+      COALESCE(u.first_name || ' ' || u.last_name, initcap(replace(p.slug, '-', ' '))) as name,
+      u.email as email,
       (
         SELECT json_agg(
           json_build_object(
@@ -152,7 +152,7 @@ const getProfileBySlug = async (slug) => {
         WHERE pp.profile_id = p.id
       ) as projects
     FROM lookbook_profiles p
-    JOIN users u ON p.user_id = u.user_id
+    LEFT JOIN users u ON p.user_id = u.user_id
     WHERE p.slug = $1
   `;
   
