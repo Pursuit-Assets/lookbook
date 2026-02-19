@@ -1,21 +1,39 @@
-import { memo } from 'react';
+import { memo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getImageUrl } from '../utils/api';
 import './PersonCard.css';
 
+// Build srcset for WebP uploads that have a 400w variant
+function getPhotoSrcSet(photoUrl) {
+  if (!photoUrl?.startsWith('/uploads/') || !photoUrl.endsWith('.webp')) return null;
+  const smallUrl = getImageUrl(photoUrl.replace('.webp', '-400w.webp'));
+  const fullUrl = getImageUrl(photoUrl);
+  return `${smallUrl} 400w, ${fullUrl} 800w`;
+}
+
 function PersonCard({ person }) {
+  const [photoLoaded, setPhotoLoaded] = useState(false);
+
+  const photoSrc = getImageUrl(person.photo_url);
+  const photoSrcSet = getPhotoSrcSet(person.photo_url);
+
   return (
     <Link to={`/people/${person.slug}`} className="person-card">
       <div className="person-card__header">
         {person.photo_url ? (
-          <img 
-            src={getImageUrl(person.photo_url)} 
-            alt={person.name}
-            className="person-card__photo"
-            loading="lazy"
-          />
+          <div className={`person-card__photo-wrap${photoLoaded ? ' person-card__photo-wrap--loaded' : ''}`}>
+            <img
+              src={photoSrc}
+              srcSet={photoSrcSet || undefined}
+              sizes="120px"
+              alt={person.name}
+              className={`person-card__photo${photoLoaded ? ' person-card__photo--loaded' : ''}`}
+              loading="lazy"
+              onLoad={() => setPhotoLoaded(true)}
+            />
+          </div>
         ) : (
-          <div className="person-card__photo person-card__photo--placeholder">
+          <div className="person-card__photo--placeholder">
             {person.name?.charAt(0) || '?'}
           </div>
         )}

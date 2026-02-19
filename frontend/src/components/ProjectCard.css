@@ -17,8 +17,15 @@
 
 .project-card__image {
   width: 100%;
-  height: 180px;
+  aspect-ratio: 16 / 9;
   overflow: hidden;
+  background: linear-gradient(90deg, var(--color-bg-gray) 25%, #d8d8d8 50%, var(--color-bg-gray) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite linear;
+}
+
+.project-card__image--loaded {
+  animation: none;
   background: var(--color-bg-gray);
 }
 
@@ -26,6 +33,25 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  display: block;
+}
+
+.project-card__image img.loaded {
+  opacity: 1;
+}
+
+.project-card__image video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
 }
 
 .project-card__body {

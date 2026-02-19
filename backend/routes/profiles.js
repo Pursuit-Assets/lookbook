@@ -5,6 +5,7 @@ const express = require('express');
 const router = express.Router();
 const profileQueries = require('../queries/profileQueries');
 const { pool } = require('../db/dbConfig');
+const { processBase64Image, isBase64Image } = require('../utils/imageConverter');
 
 // Simple in-memory cache for profiles (5 minute TTL)
 const cache = {
@@ -348,6 +349,15 @@ router.post('/', async (req, res) => {
       }
     }
     
+    // Process base64 photo to optimized WebP file
+    const rawPhotoUrl = profileData.photoUrl || profileData.photo_url || null;
+    let processedPhotoUrl = rawPhotoUrl;
+    if (isBase64Image(rawPhotoUrl)) {
+      const slug = profileData.slug.trim().toLowerCase();
+      const result = await processBase64Image(rawPhotoUrl, 'profiles', `${slug}-`, { maxWidth: 800, quality: 85 });
+      processedPhotoUrl = result.url;
+    }
+
     // Normalize field names: convert snake_case to camelCase
     // Handle both formats for compatibility
     // Ensure arrays are always arrays (not null/undefined)
@@ -360,7 +370,7 @@ router.post('/', async (req, res) => {
       industryExpertise: Array.isArray(profileData.industryExpertise) ? profileData.industryExpertise : (Array.isArray(profileData.industry_expertise) ? profileData.industry_expertise : []),
       openToWork: profileData.openToWork !== undefined ? profileData.openToWork : (profileData.open_to_work !== undefined ? profileData.open_to_work : false),
       highlights: Array.isArray(profileData.highlights) ? profileData.highlights : [],
-      photoUrl: profileData.photoUrl || profileData.photo_url || null,
+      photoUrl: processedPhotoUrl,
       photoLqip: profileData.photoLqip || profileData.photo_lqip || null,
       linkedinUrl: profileData.linkedinUrl || profileData.linkedin_url || null,
       githubUrl: profileData.githubUrl || profileData.github_url || null,
@@ -495,6 +505,14 @@ router.put('/:slug', async (req, res) => {
     // Separate experience from other updates
     const { experience, ...profileUpdates } = updates;
     
+    // Process base64 photo to optimized WebP file if present in update
+    const rawPhotoUpdate = profileUpdates.photo_url || profileUpdates.photoUrl;
+    if (rawPhotoUpdate && isBase64Image(rawPhotoUpdate)) {
+      const result = await processBase64Image(rawPhotoUpdate, 'profiles', `${slug}-`, { maxWidth: 800, quality: 85 });
+      profileUpdates.photo_url = result.url;
+      delete profileUpdates.photoUrl;
+    }
+
     // Normalize field names: convert snake_case to camelCase for updateProfile
     // The updateProfile function expects camelCase, but frontend sends snake_case
     const normalizedUpdates = {};

@@ -69,7 +69,12 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Serve static files from public directory (for uploaded images)
-app.use('/uploads', express.static('public/uploads'));
+// Cache images aggressively in the browser - 7 days
+app.use('/uploads', express.static('public/uploads', {
+  maxAge: '7d',
+  etag: true,
+  lastModified: true
+}));
 
 // Request logging middleware
 app.use((req, res, next) => {

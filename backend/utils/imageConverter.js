@@ -82,9 +82,75 @@ function deleteImageFile(imageUrl) {
   return false;
 }
 
+/**
+ * Converts a base64 image to optimized WebP files using Sharp.
+ * Generates a full-size and 400w version for srcset.
+ * Falls back to base64ToFile if Sharp is unavailable.
+ *
+ * @param {string} base64String - base64 encoded image (data:image/... prefix)
+ * @param {string} directory - 'profiles' or 'projects'
+ * @param {string} prefix - filename prefix (e.g. slug)
+ * @param {Object} options - { maxWidth, quality }
+ * @returns {Promise<{ url: string, srcset: string }>}
+ */
+async function processBase64Image(base64String, directory, prefix = '', options = {}) {
+  if (!base64String || !base64String.includes('base64,')) {
+    return { url: base64String, srcset: '' };
+  }
+
+  const { maxWidth = 1200, quality = 82 } = options;
+
+  // Extract raw buffer from base64
+  const matches = base64String.match(/^data:image\/(\w+);base64,(.+)$/);
+  if (!matches) return { url: base64String, srcset: '' };
+
+  const data = matches[2];
+  const hash = crypto.createHash('md5').update(data).digest('hex').substring(0, 12);
+  const uploadsDir = path.join(__dirname, '..', 'public', 'uploads', directory);
+
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+
+  // Try Sharp first for WebP conversion
+  try {
+    const sharp = require('sharp');
+    const buffer = Buffer.from(data, 'base64');
+
+    const fullFilename = `${prefix}${hash}.webp`;
+    const fullPath = path.join(uploadsDir, fullFilename);
+    const smallFilename = `${prefix}${hash}-400w.webp`;
+    const smallPath = path.join(uploadsDir, smallFilename);
+
+    // Generate full-size WebP
+    await sharp(buffer)
+      .resize(maxWidth, null, { withoutEnlargement: true, fit: 'inside' })
+      .webp({ quality })
+      .toFile(fullPath);
+
+    // Generate 400w thumbnail
+    await sharp(buffer)
+      .resize(400, null, { withoutEnlargement: true, fit: 'inside' })
+      .webp({ quality })
+      .toFile(smallPath);
+
+    const url = `/uploads/${directory}/${fullFilename}`;
+    const smallUrl = `/uploads/${directory}/${smallFilename}`;
+    const srcset = `${smallUrl} 400w, ${url} ${maxWidth}w`;
+
+    return { url, srcset };
+  } catch (err) {
+    console.warn('Sharp not available, falling back to original format:', err.message);
+    // Fall back to saving original format
+    const fallbackUrl = base64ToFile(base64String, directory, prefix);
+    return { url: fallbackUrl, srcset: '' };
+  }
+}
+
 module.exports = {
   base64ToFile,
   isBase64Image,
-  deleteImageFile
+  deleteImageFile,
+  processBase64Image
 };
 
