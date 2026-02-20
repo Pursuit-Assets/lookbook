@@ -5,6 +5,7 @@ const express = require('express');
 const router = express.Router();
 const profileQueries = require('../queries/profileQueries');
 const { pool } = require('../db/dbConfig');
+const { processBase64Image, isBase64Image } = require('../utils/imageConverter');
 
 // Simple in-memory cache for profiles (5 minute TTL)
 const cache = {
@@ -348,6 +349,15 @@ router.post('/', async (req, res) => {
       }
     }
     
+    // Process base64 photo to optimized WebP file
+    const rawPhotoUrl = profileData.photoUrl || profileData.photo_url || null;
+    let processedPhotoUrl = rawPhotoUrl;
+    if (isBase64Image(rawPhotoUrl)) {
+      const slug = profileData.slug.trim().toLowerCase();
+      const result = await processBase64Image(rawPhotoUrl, 'profiles', `${slug}-`, { maxWidth: 800, quality: 85 });
+      processedPhotoUrl = result.url;
+    }
+
     // Normalize field names: convert snake_case to camelCase
     // Handle both formats for compatibility
     // Ensure arrays are always arrays (not null/undefined)
@@ -360,7 +370,7 @@ router.post('/', async (req, res) => {
       industryExpertise: Array.isArray(profileData.industryExpertise) ? profileData.industryExpertise : (Array.isArray(profileData.industry_expertise) ? profileData.industry_expertise : []),
       openToWork: profileData.openToWork !== undefined ? profileData.openToWork : (profileData.open_to_work !== undefined ? profileData.open_to_work : false),
       highlights: Array.isArray(profileData.highlights) ? profileData.highlights : [],
-      photoUrl: profileData.photoUrl || profileData.photo_url || null,
+      photoUrl: processedPhotoUrl,
       photoLqip: profileData.photoLqip || profileData.photo_lqip || null,
       linkedinUrl: profileData.linkedinUrl || profileData.linkedin_url || null,
       githubUrl: profileData.githubUrl || profileData.github_url || null,
@@ -495,6 +505,14 @@ router.put('/:slug', async (req, res) => {
     // Separate experience from other updates
     const { experience, ...profileUpdates } = updates;
     
+    // Process base64 photo to optimized WebP file if present in update
+    const rawPhotoUpdate = profileUpdates.photo_url || profileUpdates.photoUrl;
+    if (rawPhotoUpdate && isBase64Image(rawPhotoUpdate)) {
+      const result = await processBase64Image(rawPhotoUpdate, 'profiles', `${slug}-`, { maxWidth: 800, quality: 85 });
+      profileUpdates.photo_url = result.url;
+      delete profileUpdates.photoUrl;
+    }
+
     // Normalize field names: convert snake_case to camelCase for updateProfile
     // The updateProfile function expects camelCase, but frontend sends snake_case
     const normalizedUpdates = {};
@@ -531,78 +549,58 @@ router.put('/:slug', async (req, res) => {
     }
     
     // If name is provided in updates, also update the user's name in the users table
-    console.log('🔍 Checking if name update is needed. updates.name:', updates.name);
+    // — but only if it actually changed (form always sends name even when unedited)
     if (updates.name) {
-      console.log('📝 Name update requested:', updates.name);
       try {
         const nameParts = updates.name.split(' ');
         const firstName = nameParts[0] || '';
         const lastName = nameParts.slice(1).join(' ') || '';
-        console.log('📝 Parsed name - First:', firstName, 'Last:', lastName);
-        
-        // Get user_id from the updated profile (it should have user_id from RETURNING *)
-        // If not available, fetch it separately
+
+        // Resolve user_id
         let userId = updatedProfile.user_id;
-        console.log('🔍 user_id from updatedProfile:', userId);
-        console.log('🔍 updatedProfile keys:', Object.keys(updatedProfile || {}));
-        
         if (!userId) {
-          console.log('⚠️ user_id not in updatedProfile, fetching...');
           const profileWithUser = await profileQueries.getProfileBySlug(slug);
           userId = profileWithUser?.user_id;
-          console.log('🔍 user_id from getProfileBySlug:', userId);
         }
-        
-        // If still no userId, try to get it directly from the database
         if (!userId) {
-          console.log('⚠️ Still no user_id, querying database directly...');
           const directQuery = await pool.query(
-            'SELECT user_id FROM lookbook_profiles WHERE slug = $1',
-            [slug]
+            'SELECT user_id FROM lookbook_profiles WHERE slug = $1', [slug]
           );
-          if (directQuery.rows.length > 0) {
-            userId = directQuery.rows[0].user_id;
-            console.log('🔍 user_id from direct query:', userId);
-          }
+          if (directQuery.rows.length > 0) userId = directQuery.rows[0].user_id;
         }
-        
+
         if (userId) {
-          console.log('🔄 Attempting to update user', userId, 'with name:', firstName, lastName);
-          try {
-            const updateResult = await pool.query(
-              'UPDATE users SET first_name = $1, last_name = $2 WHERE user_id = $3 RETURNING first_name, last_name',
-              [firstName, lastName, userId]
-            );
-            console.log('✅ SUCCESS: Updated user name to:', updates.name, 'for user_id:', userId);
-            console.log('✅ Updated user record:', updateResult.rows[0]);
-          } catch (updateError) {
-            // Re-throw to be caught by outer catch block
-            throw updateError;
+          // Only write if the name actually changed
+          const current = await pool.query(
+            'SELECT first_name, last_name FROM users WHERE user_id = $1', [userId]
+          );
+          const currentName = current.rows.length > 0
+            ? `${current.rows[0].first_name} ${current.rows[0].last_name}`.trim()
+            : null;
+
+          if (currentName !== updates.name.trim()) {
+            try {
+              await pool.query(
+                'UPDATE users SET first_name = $1, last_name = $2 WHERE user_id = $3',
+                [firstName, lastName, userId]
+              );
+              console.log('✅ Updated user name to:', updates.name);
+            } catch (updateError) {
+              if (updateError.code === '42501' || updateError.message.includes('permission denied')) {
+                nameUpdateWarning = 'Name could not be changed due to database permissions, but other changes were saved.';
+              } else {
+                console.error('⚠️ Name update failed:', updateError.message);
+              }
+            }
+          } else {
+            console.log('ℹ️ Name unchanged, skipping users table update');
           }
         } else {
           console.warn('⚠️ Could not find user_id for profile:', slug);
-          console.warn('⚠️ Name update will be skipped');
         }
       } catch (nameUpdateError) {
-        console.error('❌❌❌ ERROR updating user name ❌❌❌');
-        console.error('Error code:', nameUpdateError.code);
-        console.error('Error message:', nameUpdateError.message);
-        console.error('Error detail:', nameUpdateError.detail);
-        console.error('Error stack:', nameUpdateError.stack);
-        
-        // If it's a permission error, log it clearly and track warning (but continue with other updates)
-        if (nameUpdateError.code === '42501' || nameUpdateError.message.includes('permission denied')) {
-          console.error('⚠️⚠️⚠️ UPDATE permission not available on users table ⚠️⚠️⚠️');
-          console.error('⚠️ The profile was updated, but the user name could not be changed.');
-          console.error('⚠️ Continuing with experience updates...');
-          nameUpdateWarning = 'Name could not be changed due to database permissions, but other changes were saved.';
-        } else {
-          // For other errors, just log but don't fail the request
-          console.error('⚠️ Name update failed, but continuing with other updates');
-        }
+        console.error('❌ Error in name update logic:', nameUpdateError.message);
       }
-    } else {
-      console.log('ℹ️ No name in updates, skipping user name update');
     }
     
     // If experience data is provided, update it (this MUST run regardless of name update result)

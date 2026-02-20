@@ -22,7 +22,7 @@ function HomePage() {
     let timeoutId;
     const fetchProjects = async () => {
       try {
-        const data = await projectsAPI.getAll({ limit: 30 });
+        const data = await projectsAPI.getAll({ limit: 12 });
         if (data.success) {
           setProjects(data.data);
           // Initialize with first 5 projects for display
@@ -66,7 +66,7 @@ function HomePage() {
     let timeoutId;
     const fetchProfiles = async () => {
       try {
-        const data = await profilesAPI.getAll({ limit: 30 });
+        const data = await profilesAPI.getAll({ limit: 12 });
         if (data.success) {
           setProfiles(data.data);
           // Initialize with first 5 profiles

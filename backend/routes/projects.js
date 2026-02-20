@@ -5,6 +5,7 @@ const express = require('express');
 const router = express.Router();
 const projectQueries = require('../queries/projectQueries');
 const { pool } = require('../db/dbConfig');
+const { processBase64Image, isBase64Image } = require('../utils/imageConverter');
 
 // Simple in-memory cache for projects (to reduce database load)
 const projectCache = new Map();
@@ -229,7 +230,7 @@ router.get('/:slug', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const projectData = req.body;
-    
+
     // Basic validation
     if (!projectData.slug || !projectData.title) {
       return res.status(400).json({
@@ -237,7 +238,18 @@ router.post('/', async (req, res) => {
         error: 'Missing required fields: slug, title'
       });
     }
-    
+
+    // Process any base64 images to optimized WebP files
+    const slug = projectData.slug.trim().toLowerCase();
+    const imageFields = ['main_image_url', 'card_background_url', 'partner_logo_url', 'icon_url'];
+    for (const field of imageFields) {
+      if (isBase64Image(projectData[field])) {
+        const opts = field === 'icon_url' ? { maxWidth: 256, quality: 85 } : { maxWidth: 1200, quality: 82 };
+        const result = await processBase64Image(projectData[field], 'projects', `${slug}-`, opts);
+        projectData[field] = result.url;
+      }
+    }
+
     const newProject = await projectQueries.createProject(projectData);
     
     res.status(201).json({
@@ -326,6 +338,16 @@ router.put('/:slug', async (req, res) => {
       delete projectUpdates.partnerLogoUrl;
     }
     
+    // Process any base64 images to optimized WebP files
+    const imageFields = ['main_image_url', 'card_background_url', 'partner_logo_url', 'icon_url'];
+    for (const field of imageFields) {
+      if (isBase64Image(projectUpdates[field])) {
+        const opts = field === 'icon_url' ? { maxWidth: 256, quality: 85 } : { maxWidth: 1200, quality: 82 };
+        const result = await processBase64Image(projectUpdates[field], 'projects', `${slug}-`, opts);
+        projectUpdates[field] = result.url;
+      }
+    }
+
     // Update the project
     const updatedProject = await projectQueries.updateProject(slug, projectUpdates);
     

@@ -1,30 +1,49 @@
-import { memo } from 'react';
+import { memo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getImageUrl } from '../utils/api';
 import './ProjectCard.css';
 
+// Build srcset for WebP uploads that have a 400w variant
+function getImageSrcSet(imageUrl) {
+  if (!imageUrl?.startsWith('/uploads/') || !imageUrl.endsWith('.webp')) return null;
+  const smallUrl = getImageUrl(imageUrl.replace('.webp', '-400w.webp'));
+  const fullUrl = getImageUrl(imageUrl);
+  return `${smallUrl} 400w, ${fullUrl} 1200w`;
+}
+
 function ProjectCard({ project }) {
+  const [imageLoaded, setImageLoaded] = useState(false);
+
   // Priority: video > card background image > main image
   const cardVideoUrl = project.card_background_video_url;
   const cardImageUrl = project.card_background_url || project.main_image_url;
-  
+  const cardSrc = getImageUrl(cardImageUrl);
+  const cardSrcSet = getImageSrcSet(cardImageUrl);
+
   return (
     <Link to={`/projects/${project.slug}`} className="project-card">
       {cardVideoUrl ? (
-        <div className="project-card__image">
-          <video 
-            src={cardVideoUrl} 
-            alt={project.title}
+        <div className="project-card__image project-card__image--loaded">
+          <video
+            src={cardVideoUrl}
             autoPlay
             muted
             loop
             playsInline
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            preload="none"
           />
         </div>
       ) : cardImageUrl ? (
-        <div className="project-card__image">
-          <img src={getImageUrl(cardImageUrl)} alt={project.title} loading="lazy" />
+        <div className={`project-card__image${imageLoaded ? ' project-card__image--loaded' : ''}`}>
+          <img
+            src={cardSrc}
+            srcSet={cardSrcSet || undefined}
+            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 400px"
+            alt={project.title}
+            loading="lazy"
+            className={imageLoaded ? 'loaded' : ''}
+            onLoad={() => setImageLoaded(true)}
+          />
         </div>
       ) : null}
       

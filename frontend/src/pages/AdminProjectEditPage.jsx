@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
+import imageCompression from 'browser-image-compression';
 import { projectsAPI, profilesAPI, initiativesAPI, getImageUrl } from '../utils/api';
 import AdminLayout from '../components/AdminLayout';
 import { Button } from '@/components/ui/button';
@@ -80,7 +81,6 @@ function AdminProjectEditPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate file type
     if (!file.type.startsWith('image/')) {
       toast.error('Invalid file type', {
         description: 'Please upload an image file (PNG, JPG, SVG, etc.)'
@@ -88,22 +88,25 @@ function AdminProjectEditPage() {
       return;
     }
 
-    // Validate file size (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
+    if (file.size > 10 * 1024 * 1024) {
       toast.error('File too large', {
-        description: 'Please upload an image smaller than 5MB'
+        description: 'Please upload an image smaller than 10MB'
       });
       return;
     }
 
     try {
-      toast.info('Uploading image...', {
-        description: 'Converting image to base64...'
+      toast.info('Uploading image...', { description: 'Compressing image...' });
+      const compressed = await imageCompression(file, {
+        maxSizeMB: 1,
+        maxWidthOrHeight: 1200,
+        useWebWorker: true,
+        fileType: file.type === 'image/svg+xml' ? 'image/svg+xml' : 'image/jpeg'
       });
-      const base64 = await fileToBase64(file);
+      const base64 = await fileToBase64(compressed);
       setFormData({ ...formData, main_image_url: base64 });
       toast.success('Image uploaded!', {
-        description: 'Image has been converted and will be saved with the project'
+        description: 'Image has been compressed and will be saved with the project'
       });
     } catch (error) {
       console.error('Error uploading image:', error);
@@ -118,7 +121,6 @@ function AdminProjectEditPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate file type
     if (!file.type.startsWith('image/')) {
       toast.error('Invalid file type', {
         description: 'Please upload an image file (PNG, JPG, SVG, etc.)'
@@ -126,22 +128,25 @@ function AdminProjectEditPage() {
       return;
     }
 
-    // Validate file size (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
+    if (file.size > 10 * 1024 * 1024) {
       toast.error('File too large', {
-        description: 'Please upload an image smaller than 5MB'
+        description: 'Please upload an image smaller than 10MB'
       });
       return;
     }
 
     try {
-      toast.info('Uploading card background...', {
-        description: 'Converting image to base64...'
+      toast.info('Uploading card background...', { description: 'Compressing image...' });
+      const compressed = await imageCompression(file, {
+        maxSizeMB: 1,
+        maxWidthOrHeight: 1200,
+        useWebWorker: true,
+        fileType: file.type === 'image/svg+xml' ? 'image/svg+xml' : 'image/jpeg'
       });
-      const base64 = await fileToBase64(file);
+      const base64 = await fileToBase64(compressed);
       setFormData({ ...formData, card_background_url: base64 });
       toast.success('Card background uploaded!', {
-        description: 'Image has been converted and will be saved with the project'
+        description: 'Image has been compressed and will be saved with the project'
       });
     } catch (error) {
       console.error('Error uploading card background:', error);
@@ -194,7 +199,6 @@ function AdminProjectEditPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate file type
     if (!file.type.startsWith('image/')) {
       toast.error('Invalid file type', {
         description: 'Please upload an image file (PNG, JPG, SVG, etc.)'
@@ -202,7 +206,6 @@ function AdminProjectEditPage() {
       return;
     }
 
-    // Validate file size (max 5MB)
     if (file.size > 5 * 1024 * 1024) {
       toast.error('File too large', {
         description: 'Please upload an image smaller than 5MB'
@@ -211,13 +214,17 @@ function AdminProjectEditPage() {
     }
 
     try {
-      toast.info('Uploading partner logo...', {
-        description: 'Converting image to base64...'
+      toast.info('Uploading partner logo...', { description: 'Compressing image...' });
+      const compressed = await imageCompression(file, {
+        maxSizeMB: 0.2,
+        maxWidthOrHeight: 400,
+        useWebWorker: true,
+        fileType: file.type === 'image/svg+xml' ? 'image/svg+xml' : 'image/png'
       });
-      const base64 = await fileToBase64(file);
+      const base64 = await fileToBase64(compressed);
       setFormData({ ...formData, partner_logo_url: base64 });
       toast.success('Partner logo uploaded!', {
-        description: 'Logo has been converted and will be saved with the project'
+        description: 'Logo has been compressed and will be saved with the project'
       });
     } catch (error) {
       console.error('Error uploading partner logo:', error);
@@ -232,7 +239,6 @@ function AdminProjectEditPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate file type
     if (!file.type.startsWith('image/')) {
       toast.error('Invalid file type', {
         description: 'Please upload an image file (PNG, JPG, SVG, etc.)'
@@ -240,7 +246,6 @@ function AdminProjectEditPage() {
       return;
     }
 
-    // Validate file size (max 2MB for icons)
     if (file.size > 2 * 1024 * 1024) {
       toast.error('File too large', {
         description: 'Please upload an icon smaller than 2MB'
@@ -249,13 +254,17 @@ function AdminProjectEditPage() {
     }
 
     try {
-      toast.info('Uploading icon...', {
-        description: 'Converting icon to base64...'
+      toast.info('Uploading icon...', { description: 'Compressing icon...' });
+      const compressed = await imageCompression(file, {
+        maxSizeMB: 0.1,
+        maxWidthOrHeight: 256,
+        useWebWorker: true,
+        fileType: file.type === 'image/svg+xml' ? 'image/svg+xml' : 'image/png'
       });
-      const base64 = await fileToBase64(file);
+      const base64 = await fileToBase64(compressed);
       setFormData({ ...formData, icon_url: base64 });
       toast.success('Icon uploaded!', {
-        description: 'Icon has been converted and will be saved with the project'
+        description: 'Icon has been compressed and will be saved with the project'
       });
     } catch (error) {
       console.error('Error uploading icon:', error);
