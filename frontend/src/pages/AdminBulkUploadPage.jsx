@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import Papa from 'papaparse';
 import { profilesAPI, projectsAPI } from '../utils/api';
 import AdminLayout from '../components/AdminLayout';
 import { Button } from '@/components/ui/button';
@@ -28,7 +27,8 @@ function AdminBulkUploadPage() {
     ['My Project', 'my-project', 'A comprehensive web application that does amazing things', 'An amazing web app', 'https://example.com/image.jpg', 'https://player.vimeo.com/video/123456', 'https://github.com/user/repo', 'https://myproject.com', 'React,Node.js,PostgreSQL', 'B2B,Technology']
   ];
 
-  const downloadTemplate = () => {
+  const downloadTemplate = async () => {
+    const { default: Papa } = await import('papaparse');
     const template = uploadType === 'people' ? peopleTemplate : projectsTemplate;
     const csv = Papa.unparse(template);
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -60,7 +60,8 @@ function AdminBulkUploadPage() {
     }
   };
 
-  const parseCSV = (file) => {
+  const parseCSV = async (file) => {
+    const { default: Papa } = await import('papaparse');
     return new Promise((resolve, reject) => {
       Papa.parse(file, {
         header: true,
