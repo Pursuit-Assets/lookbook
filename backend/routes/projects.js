@@ -239,8 +239,15 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // Process any base64 images to optimized WebP files
+    // Validate slug format (only lowercase letters, numbers, and hyphens)
     const slug = projectData.slug.trim().toLowerCase();
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid slug format. Use only lowercase letters, numbers, and hyphens (e.g., "my-project-name")'
+      });
+    }
+    projectData.slug = slug;
     const imageFields = ['main_image_url', 'card_background_url', 'partner_logo_url', 'icon_url'];
     for (const field of imageFields) {
       if (isBase64Image(projectData[field])) {
@@ -405,6 +412,45 @@ router.put('/:slug', async (req, res) => {
       success: false,
       error: 'Failed to update project',
       message: error.message 
+    });
+  }
+});
+
+// =====================================================
+// DELETE /api/projects/by-id/:id
+// Delete project by ID (for cases where slug is malformed)
+// TODO: Add authentication middleware
+// =====================================================
+
+router.delete('/by-id/:id', async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid project ID'
+      });
+    }
+
+    const deletedProject = await projectQueries.deleteProjectById(id);
+
+    if (!deletedProject) {
+      return res.status(404).json({
+        success: false,
+        error: 'Project not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Project deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting project by ID:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to delete project',
+      message: error.message
     });
   }
 });

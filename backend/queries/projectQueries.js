@@ -302,6 +302,12 @@ const deleteProject = async (slug) => {
   return result.rows[0] || null;
 };
 
+const deleteProjectById = async (id) => {
+  const query = 'DELETE FROM lookbook_projects WHERE id = $1 RETURNING *';
+  const result = await pool.query(query, [id]);
+  return result.rows[0] || null;
+};
+
 // =====================================================
 // ADD PARTICIPANT TO PROJECT
 // =====================================================
@@ -412,6 +418,7 @@ module.exports = {
   createProject,
   updateProject,
   deleteProject,
+  deleteProjectById,
   addParticipant,
   removeParticipant,
   getProjectsByProfile,
