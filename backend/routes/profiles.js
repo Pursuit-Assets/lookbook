@@ -570,13 +570,19 @@ router.put('/:slug', async (req, res) => {
         }
 
         if (userId) {
-          // Only write if the name actually changed
+          // Only write if the name actually changed.
+          // Use COALESCE to get the same display name the API returns, so the
+          // comparison is apples-to-apples and doesn't false-positive when
+          // first_name / last_name are NULL (JS `${null}` → "null").
           const current = await pool.query(
-            'SELECT first_name, last_name FROM users WHERE user_id = $1', [userId]
+            `SELECT COALESCE(
+               NULLIF(TRIM(COALESCE(first_name,'') || ' ' || COALESCE(last_name,'')), ''),
+               NULL
+             ) AS display_name
+             FROM users WHERE user_id = $1`,
+            [userId]
           );
-          const currentName = current.rows.length > 0
-            ? `${current.rows[0].first_name} ${current.rows[0].last_name}`.trim()
-            : null;
+          const currentName = current.rows[0]?.display_name ?? null;
 
           if (currentName !== updates.name.trim()) {
             try {
