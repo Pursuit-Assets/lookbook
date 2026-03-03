@@ -158,12 +158,25 @@ const cachedGetWithParams = async (url, params = {}, cacheKeyPrefix, ttl = 12000
 // =====================================================
 
 export const profilesAPI = {
-  getAll: (filters = {}) => api.get('/profiles', { params: filters }),
+  getAll: (filters = {}) => {
+    return cachedGetWithParams('/profiles', filters, 'profiles-list', 300000); // 5-min cache
+  },
   getBySlug: (slug) => cachedGet(`/profiles/${slug}`, `profile-${slug}`, 120000), // Cache for 2 minutes
   getFilters: () => cachedGet('/profiles/filters', 'profiles-filters', 300000), // Cache for 5 minutes
-  create: (data) => api.post('/profiles', data),
-  update: (slug, data) => api.put(`/profiles/${slug}`, data),
-  delete: (slug) => api.delete(`/profiles/${slug}`),
+  create: (data) => {
+    apiCache.clear(); // Invalidate on create
+    return api.post('/profiles', data);
+  },
+  update: (slug, data) => {
+    apiCache.delete(`profile-${slug}`);
+    apiCache.getKeys().filter(k => k.startsWith('profiles-list:')).forEach(k => apiCache.delete(k));
+    return api.put(`/profiles/${slug}`, data);
+  },
+  delete: (slug) => {
+    apiCache.delete(`profile-${slug}`);
+    apiCache.clear(); // Invalidate all on delete
+    return api.delete(`/profiles/${slug}`);
+  },
   addExperience: (slug, data) => api.post(`/profiles/${slug}/experience`, data),
 };
 

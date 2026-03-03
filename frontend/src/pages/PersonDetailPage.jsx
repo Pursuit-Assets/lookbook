@@ -679,6 +679,7 @@ function PersonDetailPage() {
   const [loading, setLoading] = useState(true);
   const [gridListLoading, setGridListLoading] = useState(false); // Loading state for grid/list views
   const [loadingMore, setLoadingMore] = useState(false); // Loading state for progressive loading of additional projects
+  const [slowLoadWarning, setSlowLoadWarning] = useState(false); // True after 5s of loading (cold start feedback)
   const [error, setError] = useState(null);
   const { startLoading, setLoadingProgress, completeLoading } = useLoadingProgress();
   const isFetchingRef = useRef(false); // Track if we're currently fetching to prevent multiple simultaneous fetches
@@ -943,17 +944,25 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
     let isMounted = true;
     
     const fetchData = async () => {
-      // Prevent multiple simultaneous fetches
-      if (isFetchingRef.current) {
-        return;
+      // Cancel any previous in-flight request
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
       }
-      
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+
+      let slowLoadTimer = null;
+
+      // Only show loading spinner when we have no data to display (avoids flicker when switching tabs)
+      const hasCachedData = (viewMode === 'people' && allProfiles.length > 0) || (viewMode === 'projects' && allProjects.length > 0);
+
       if (layoutView === 'grid' || layoutView === 'list') {
         isFetchingRef.current = true;
-        if (isMounted) {
+        if (isMounted && !hasCachedData) {
           setGridListLoading(true);
           startLoading();
           setLoadingProgress(10); // Start at 10%
+          slowLoadTimer = setTimeout(() => setSlowLoadWarning(true), 5000);
         }
       }
       
@@ -976,7 +985,8 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
               industries: peopleIndustriesFilter.length > 0 ? peopleIndustriesFilter : undefined,
               openToWork: peopleFilters.openToWork ? true : undefined
             });
-            
+
+            if (controller.signal.aborted) return;
             setLoadingProgress(80);
             if (response && response.success) {
               setAllProfiles(response.data || []);
@@ -990,12 +1000,15 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
             setLoadingProgress(100);
             completeLoading();
           } catch (err) {
+            if (controller.signal.aborted) return;
             console.error('Error fetching profiles:', err);
             setAllProfiles([]);
             setTotalProfiles(0);
             setLoadingProgress(100);
             completeLoading();
           } finally {
+            if (slowLoadTimer) clearTimeout(slowLoadTimer);
+            setSlowLoadWarning(false);
             setGridListLoading(false);
             isFetchingRef.current = false;
           }
@@ -1022,12 +1035,15 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
                 includeParticipants: false
               });
 
+              if (controller.signal.aborted) return;
               setLoadingProgress(80);
               if (initialResponse.success) {
                 // Show first batch immediately
                 setAllProjects(initialResponse.data);
                 const total = initialResponse.pagination?.total || initialResponse.total || initialResponse.data.length;
                 setTotalProjects(total);
+                if (slowLoadTimer) clearTimeout(slowLoadTimer);
+                setSlowLoadWarning(false);
                 setGridListLoading(false); // Stop main loading spinner
                 completeLoading();
 
@@ -1045,12 +1061,14 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
                       includeParticipants: false
                     });
 
-                    if (remainingResponse.success) {
+                    if (!controller.signal.aborted && remainingResponse.success) {
                       // Append remaining projects
                       setAllProjects(prev => [...prev, ...remainingResponse.data]);
                     }
                   } catch (bgErr) {
-                    console.error('Error fetching remaining projects:', bgErr);
+                    if (!controller.signal.aborted) {
+                      console.error('Error fetching remaining projects:', bgErr);
+                    }
                   } finally {
                     setLoadingMore(false);
                   }
@@ -1069,6 +1087,7 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
                 includeParticipants: false
               });
 
+              if (controller.signal.aborted) return;
               setLoadingProgress(80);
               if (response.success) {
                 setAllProjects(response.data);
@@ -1079,10 +1098,13 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
               completeLoading();
             }
           } catch (err) {
+            if (controller.signal.aborted) return;
             console.error('Error fetching projects:', err);
             setLoadingProgress(100);
             completeLoading();
           } finally {
+            if (slowLoadTimer) clearTimeout(slowLoadTimer);
+            setSlowLoadWarning(false);
             setGridListLoading(false);
             isFetchingRef.current = false;
           }
@@ -1099,7 +1121,8 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
               industries: peopleIndustriesFilter.length > 0 ? peopleIndustriesFilter : undefined,
               openToWork: peopleFilters.openToWork ? true : undefined
             });
-            
+
+            if (controller.signal.aborted) return;
             setLoadingProgress(80);
             if (response && response.success) {
               setAllProfiles(response.data || []);
@@ -1113,12 +1136,15 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
             setLoadingProgress(100);
             completeLoading();
           } catch (err) {
+            if (controller.signal.aborted) return;
             console.error('Error fetching profiles:', err);
             setAllProfiles([]);
             setTotalProfiles(0);
             setLoadingProgress(100);
             completeLoading();
           } finally {
+            if (slowLoadTimer) clearTimeout(slowLoadTimer);
+            setSlowLoadWarning(false);
             setGridListLoading(false);
             isFetchingRef.current = false;
           }
@@ -1126,10 +1152,10 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
           try {
             setLoadingProgress(30);
             // Get cohort value from selected initiative for filtering
-            const cohortFilter = selectedInitiative 
-              ? initiatives.find(i => i.slug === selectedInitiative)?.cohort_value 
+            const cohortFilter = selectedInitiative
+              ? initiatives.find(i => i.slug === selectedInitiative)?.cohort_value
               : undefined;
-            
+
             const response = await projectsAPI.getAll({
               limit: 100,
               search: debouncedProjectSearch,
@@ -1138,7 +1164,8 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
               cohort: cohortFilter,
               includeParticipants: false // Don't need participants for list view
             });
-            
+
+            if (controller.signal.aborted) return;
             setLoadingProgress(80);
             if (response.success) {
               setAllProjects(response.data);
@@ -1148,10 +1175,13 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
             setLoadingProgress(100);
             completeLoading();
           } catch (err) {
+            if (controller.signal.aborted) return;
             console.error('Error fetching projects:', err);
             setLoadingProgress(100);
             completeLoading();
           } finally {
+            if (slowLoadTimer) clearTimeout(slowLoadTimer);
+            setSlowLoadWarning(false);
             setGridListLoading(false);
             isFetchingRef.current = false;
           }
@@ -1160,12 +1190,15 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
       // Detail view: Don't fetch filtered data - keep full unfiltered list for navigation
       // The detail view fetch happens in the slug-based useEffect which always fetches full list
     };
-    
+
     fetchData();
-    
+
     return () => {
       isMounted = false;
       isFetchingRef.current = false;
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
     };
   }, [gridPage, viewMode, debouncedPeopleSearch, debouncedProjectSearch, peopleSkillsFilter, peopleIndustriesFilter, peopleFilters.openToWork, projectSkillsFilter, projectSectorsFilter, layoutView, selectedInitiative, initiatives]);
 
@@ -2828,7 +2861,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                       ))}
                     </div>
                   ) : (
-                    <div 
+                    <div
                       key={`projects-grid-${gridPage}`}
                       className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-[18px] mb-0" 
                       style={{
@@ -2849,6 +2882,9 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                         />
                       ))}
                     </div>
+                  )}
+                  {gridListLoading && slowLoadWarning && (
+                    <p className="text-sm text-gray-500 mt-2 text-center">Server is waking up, please wait...</p>
                   )}
                   {/* Loading more indicator for progressive loading */}
                   {loadingMore && (
@@ -2984,6 +3020,9 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                     ))}
                   </div>
                 )
+              )}
+              {gridListLoading && slowLoadWarning && (
+                <p className="text-sm text-gray-500 mt-2 text-center">Server is waking up, please wait...</p>
               )}
 
             {/* Mobile Navigation - Bottom Fixed for People Grid */}
