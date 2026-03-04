@@ -186,7 +186,7 @@ const getProjectBySlug = async (slug) => {
           json_build_object(
             'profile_id', prof.id,
             'slug', prof.slug,
-            'name', COALESCE(u.first_name || ' ' || u.last_name, prof.slug),
+            'name', COALESCE(u.first_name || ' ' || u.last_name, initcap(replace(prof.slug, '-', ' '))),
             'title', prof.title,
             'photoUrl', prof.photo_url,
             'photoLqip', prof.photo_lqip,
