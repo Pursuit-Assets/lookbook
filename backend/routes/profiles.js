@@ -389,7 +389,26 @@ router.post('/', async (req, res) => {
     });
     
     const newProfile = await profileQueries.createProfile(normalizedData);
-    
+
+    // Save experience entries if provided
+    const experience = profileData.experience;
+    if (experience && Array.isArray(experience) && experience.length > 0) {
+      for (let i = 0; i < experience.length; i++) {
+        const exp = experience[i];
+        await pool.query(`
+          INSERT INTO lookbook_experience (profile_id, org, role, date_from, date_to, display_order)
+          VALUES ($1, $2, $3, $4, $5, $6)
+        `, [
+          newProfile.id,
+          exp.org || '',
+          exp.role || '',
+          exp.dateFrom || exp.date_from || '',
+          exp.dateTo || exp.date_to || '',
+          i
+        ]);
+      }
+    }
+
     // Invalidate cache
     cache.profiles = null;
     cache.filters = null;

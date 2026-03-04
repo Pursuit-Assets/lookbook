@@ -18,8 +18,8 @@ function AdminBulkUploadPage() {
 
   // CSV Templates
   const peopleTemplate = [
-    ['name', 'title', 'slug', 'bio', 'photo_url', 'linkedin_url', 'x_url', 'website_url', 'skills', 'industry_expertise', 'highlights', 'open_to_work'],
-    ['John Doe', 'Software Engineer', 'john-doe', 'Experienced full-stack developer', 'https://example.com/photo.jpg', 'https://linkedin.com/in/johndoe', '', 'https://johndoe.com', 'JavaScript,React,Node.js', 'Technology,Finance', 'Led team of 5 developers|Increased performance by 40%', 'true']
+    ['name', 'title', 'slug', 'bio', 'photo_url', 'linkedin_url', 'x_url', 'website_url', 'github_url', 'skills', 'industry_expertise', 'highlights', 'open_to_work'],
+    ['John Doe', 'Software Engineer', 'john-doe', 'Experienced full-stack developer', 'https://example.com/photo.jpg', 'https://linkedin.com/in/johndoe', '', 'https://johndoe.com', 'https://github.com/johndoe', 'JavaScript,React,Node.js', 'Technology,Finance', 'Led team of 5 developers|Increased performance by 40%', 'true']
   ];
 
   const projectsTemplate = [
@@ -98,6 +98,7 @@ function AdminBulkUploadPage() {
       linkedin_url: row.linkedin_url || '',
       x_url: row.x_url || '',
       website_url: row.website_url || '',
+      github_url: row.github_url || '',
       skills: row.skills ? row.skills.split(',').map(s => s.trim()).filter(s => s) : [],
       industry_expertise: row.industry_expertise ? row.industry_expertise.split(',').map(s => s.trim()).filter(s => s) : [],
       highlights: row.highlights ? row.highlights.split('|').map(s => s.trim()).filter(s => s) : [],

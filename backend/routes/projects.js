@@ -248,17 +248,42 @@ router.post('/', async (req, res) => {
       });
     }
     projectData.slug = slug;
+
+    // Separate participants from other project data
+    const { participants, ...projectFields } = projectData;
+
     const imageFields = ['main_image_url', 'card_background_url', 'partner_logo_url', 'icon_url'];
     for (const field of imageFields) {
-      if (isBase64Image(projectData[field])) {
+      if (isBase64Image(projectFields[field])) {
         const opts = field === 'icon_url' ? { maxWidth: 256, quality: 85 } : { maxWidth: 1200, quality: 82 };
-        const result = await processBase64Image(projectData[field], 'projects', `${slug}-`, opts);
-        projectData[field] = result.url;
+        const result = await processBase64Image(projectFields[field], 'projects', `${slug}-`, opts);
+        projectFields[field] = result.url;
       }
     }
 
-    const newProject = await projectQueries.createProject(projectData);
-    
+    // Create the project first
+    const newProject = await projectQueries.createProject(projectFields);
+
+    // Save participants if provided (best effort — project is already created)
+    if (participants && Array.isArray(participants) && participants.length > 0) {
+      for (let i = 0; i < participants.length; i++) {
+        const participant = participants[i];
+        if (!participant) continue;
+        const profileId = typeof participant === 'number' ? participant :
+          (participant.profile_id || participant.profileId || participant.id);
+        if (profileId) {
+          const role = typeof participant === 'object' && participant !== null ? (participant.role || '') : '';
+          await pool.query(`
+            INSERT INTO lookbook_project_participants (project_id, profile_id, role, display_order)
+            VALUES ($1, $2, $3, $4)
+          `, [newProject.id, profileId, role, i]);
+        }
+      }
+    }
+
+    // Invalidate server-side list cache
+    projectCache.clear();
+
     res.status(201).json({
       success: true,
       data: newProject,
@@ -355,52 +380,55 @@ router.put('/:slug', async (req, res) => {
       }
     }
 
-    // Update the project
-    const updatedProject = await projectQueries.updateProject(slug, projectUpdates);
-    
-    if (!updatedProject) {
-      return res.status(404).json({ 
-        success: false,
-        error: 'Project not found' 
-      });
-    }
-    
-    console.log('Updated project:', updatedProject);
-    console.log('Project ID:', updatedProject.id);
-    console.log('Participants to save:', JSON.stringify(participants, null, 2));
-    
-    // If participants data is provided, update it
-    if (participants && Array.isArray(participants)) {
-      // First, delete all existing participants for this project
-      await pool.query('DELETE FROM lookbook_project_participants WHERE project_id = $1', [updatedProject.id]);
-      
-      // Then insert all participant entries
-      for (let i = 0; i < participants.length; i++) {
-        const participant = participants[i];
-        
-        // Skip null or undefined participants
-        if (!participant) {
-          continue;
-        }
-        
-        // participant can be either a profile_id (number) or an object with profile_id
-        const profileId = typeof participant === 'number' ? participant : (participant.profile_id || participant.profileId || participant.id);
-        const role = typeof participant === 'object' && participant !== null ? (participant.role || '') : '';
-        
-        if (profileId) {
-          await pool.query(`
-            INSERT INTO lookbook_project_participants (project_id, profile_id, role, display_order)
-            VALUES ($1, $2, $3, $4)
-          `, [
-            updatedProject.id,
-            profileId,
-            role,
-            i
-          ]);
+    const client = await pool.connect();
+    let updatedProject;
+    try {
+      await client.query('BEGIN');
+
+      // Update the project
+      updatedProject = await projectQueries.updateProject(slug, projectUpdates);
+
+      if (!updatedProject) {
+        await client.query('ROLLBACK');
+        client.release();
+        return res.status(404).json({
+          success: false,
+          error: 'Project not found'
+        });
+      }
+
+      // If participants data is provided, replace them atomically
+      if (participants && Array.isArray(participants)) {
+        await client.query('DELETE FROM lookbook_project_participants WHERE project_id = $1', [updatedProject.id]);
+
+        for (let i = 0; i < participants.length; i++) {
+          const participant = participants[i];
+          if (!participant) continue;
+
+          const profileId = typeof participant === 'number' ? participant :
+            (participant.profile_id || participant.profileId || participant.id);
+          const role = typeof participant === 'object' && participant !== null ? (participant.role || '') : '';
+
+          if (profileId) {
+            await client.query(`
+              INSERT INTO lookbook_project_participants (project_id, profile_id, role, display_order)
+              VALUES ($1, $2, $3, $4)
+            `, [updatedProject.id, profileId, role, i]);
+          }
         }
       }
+
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
     }
-    
+
+    // Invalidate server-side list cache so stale data isn't served
+    projectCache.clear();
+
     res.json({
       success: true,
       data: updatedProject,

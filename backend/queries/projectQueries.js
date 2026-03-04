@@ -211,41 +211,42 @@ const getProjectBySlug = async (slug) => {
 // =====================================================
 
 const createProject = async (projectData) => {
-  const {
-    slug,
-    title,
-    summary,
-    description,
-    mainImageUrl,
-    mainImageLqip,
-    cardBackgroundUrl,
-    cardBackgroundVideoUrl,
-    iconUrl,
-    demoVideoUrl,
-    skills = [],
-    sectors = [],
-    githubUrl,
-    liveUrl,
-    cohort,
-    status = 'active',
-    hasPartner = false,
-    partnerName,
-    partnerLogoUrl
-  } = projectData;
-  
+  // Accept both snake_case (from frontend) and camelCase field names
+  const slug = projectData.slug;
+  const title = projectData.title;
+  const summary = projectData.summary;
+  const shortDescription = projectData.short_description || projectData.shortDescription;
+  const description = projectData.description;
+  const mainImageUrl = projectData.main_image_url || projectData.mainImageUrl;
+  const mainImageLqip = projectData.main_image_lqip || projectData.mainImageLqip;
+  const cardBackgroundUrl = projectData.card_background_url || projectData.cardBackgroundUrl;
+  const cardBackgroundVideoUrl = projectData.card_background_video_url || projectData.cardBackgroundVideoUrl;
+  const iconUrl = projectData.icon_url || projectData.iconUrl;
+  const demoVideoUrl = projectData.demo_video_url || projectData.demoVideoUrl;
+  const skills = projectData.skills || [];
+  const sectors = projectData.sectors || [];
+  const githubUrl = projectData.github_url || projectData.githubUrl;
+  const liveUrl = projectData.live_url || projectData.liveUrl;
+  const cohort = projectData.cohort;
+  const status = projectData.status || 'active';
+  const hasPartner = projectData.has_partner || projectData.hasPartner || false;
+  const partnerName = projectData.partner_name || projectData.partnerName;
+  const partnerLogoUrl = projectData.partner_logo_url || projectData.partnerLogoUrl;
+  const backgroundColor = projectData.background_color || projectData.backgroundColor || '#6366f1';
+
   const query = `
     INSERT INTO lookbook_projects (
-      slug, title, summary, description, main_image_url, main_image_lqip, card_background_url,
+      slug, title, summary, short_description, description, main_image_url, main_image_lqip, card_background_url,
       card_background_video_url, icon_url, demo_video_url, skills, sectors, github_url, live_url, cohort, status,
-      has_partner, partner_name, partner_logo_url
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+      has_partner, partner_name, partner_logo_url, background_color
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
     RETURNING *
   `;
-  
+
   const params = [
-    slug, title, summary, description, mainImageUrl, mainImageLqip, cardBackgroundUrl,
+    slug, title, summary, shortDescription, description, mainImageUrl, mainImageLqip, cardBackgroundUrl,
     cardBackgroundVideoUrl, iconUrl, demoVideoUrl, skills, sectors, githubUrl, liveUrl, cohort, status,
-    hasPartner, partnerName, partnerLogoUrl
+    hasPartner, partnerName, partnerLogoUrl, backgroundColor
   ];
   
   const result = await pool.query(query, params);
@@ -260,7 +261,7 @@ const updateProject = async (slug, updates) => {
   const allowedFields = [
     'slug', 'title', 'summary', 'short_description', 'description', 'main_image_url', 'main_image_lqip',
     'card_background_url', 'card_background_video_url', 'icon_url', 'demo_video_url', 'skills', 'sectors', 'github_url', 'live_url',
-    'cohort', 'status', 'has_partner', 'partner_name', 'partner_logo_url'
+    'cohort', 'status', 'has_partner', 'partner_name', 'partner_logo_url', 'background_color'
   ];
   
   const setClause = [];
