@@ -186,7 +186,7 @@ const getProjectBySlug = async (slug) => {
           json_build_object(
             'profile_id', prof.id,
             'slug', prof.slug,
-            'name', u.first_name || ' ' || u.last_name,
+            'name', COALESCE(u.first_name || ' ' || u.last_name, prof.slug),
             'title', prof.title,
             'photoUrl', prof.photo_url,
             'photoLqip', prof.photo_lqip,
@@ -195,7 +195,7 @@ const getProjectBySlug = async (slug) => {
         )
         FROM lookbook_project_participants pp
         JOIN lookbook_profiles prof ON pp.profile_id = prof.id
-        JOIN users u ON prof.user_id = u.user_id
+        LEFT JOIN users u ON prof.user_id = u.user_id
         WHERE pp.project_id = p.id
       ) as participants
     FROM lookbook_projects p
