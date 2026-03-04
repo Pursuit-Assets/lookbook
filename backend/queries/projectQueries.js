@@ -116,6 +116,7 @@ const getAllProjects = async (filters = {}) => {
       p.partner_logo_url,
       p.created_at,
       ${participantsQuery}
+      (SELECT COUNT(*)::int FROM lookbook_project_participants pp WHERE pp.project_id = p.id) as participant_count,
       COUNT(*) OVER() as total_count
     FROM lookbook_projects p
     WHERE ${whereClause}

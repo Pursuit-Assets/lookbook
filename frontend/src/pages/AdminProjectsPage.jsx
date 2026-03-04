@@ -223,7 +223,7 @@ function AdminProjectsPage() {
             <CardContent className="p-4">
               <div className="text-sm text-gray-500">With Team</div>
               <div className="text-2xl font-bold mt-1">
-                {filteredProjects.filter(p => p.participants && p.participants.length > 0).length}
+                {filteredProjects.filter(p => p.participant_count > 0).length}
               </div>
             </CardContent>
           </Card>
@@ -314,7 +314,7 @@ function AdminProjectsPage() {
                       </td>
                       <td className="px-6 py-4">
                         <div className="text-sm text-gray-900">
-                          {project.participants?.length || 0} members
+                          {project.participant_count || 0} members
                         </div>
                       </td>
                       <td className="px-6 py-4">
