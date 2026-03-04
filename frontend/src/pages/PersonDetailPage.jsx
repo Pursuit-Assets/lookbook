@@ -1270,12 +1270,10 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
       return;
     }
     
-    // Only increment fetch version when entering detail view, not on every filter change
-    // This prevents unnecessary version increments that could discard legitimate requests
-    const isEnteringDetailView = layoutView !== 'detail';
-    if (isEnteringDetailView) {
-      fetchVersionRef.current += 1;
-    }
+    // Always increment fetch version so that a stale people-fetch (triggered when
+    // viewMode hasn't updated yet) can't overwrite results from the correct fetch
+    // that runs once viewMode catches up to the current URL.
+    fetchVersionRef.current += 1;
     const currentFetchVersion = fetchVersionRef.current;
     
     // If there's a slug, show detail view
