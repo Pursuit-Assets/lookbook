@@ -249,6 +249,15 @@ export const aiAPI = {
 };
 
 // =====================================================
+// CLAUDE ENDPOINTS
+// =====================================================
+
+export const claudeAPI = {
+  chat: ({ messages, system, model, maxTokens } = {}) =>
+    api.post('/claude/chat', { messages, system, model, maxTokens }),
+};
+
+// =====================================================
 // TAXONOMY ENDPOINTS (Skills & Industries)
 // =====================================================
 
