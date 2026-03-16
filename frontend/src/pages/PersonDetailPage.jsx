@@ -1270,6 +1270,14 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
       return;
     }
     
+    // Guard: skip if the URL path doesn't match the current viewMode.
+    // This prevents a race condition where setViewMode() fires before navigate()
+    // updates the URL (e.g. switching from /people/:slug to /projects via the
+    // tab button), causing a cross-mode fetch that returns 404 and shows
+    // "Project not found" for a valid person slug.
+    if (viewMode === 'projects' && !location.pathname.startsWith('/projects/')) return;
+    if (viewMode === 'people' && !location.pathname.startsWith('/people/')) return;
+
     // Always increment fetch version so that a stale people-fetch (triggered when
     // viewMode hasn't updated yet) can't overwrite results from the correct fetch
     // that runs once viewMode catches up to the current URL.
