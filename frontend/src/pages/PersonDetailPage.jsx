@@ -148,9 +148,15 @@ const getEmbedUrl = (url) => {
   if (vimeoMatch) {
     return `https://player.vimeo.com/video/${vimeoMatch[3]}`;
   }
-  
+
+  // Loom patterns: loom.com/share/ID or loom.com/embed/ID
+  const loomMatch = url.match(/loom\.com\/(?:share|embed)\/([a-f0-9]+)/i);
+  if (loomMatch) {
+    return `https://www.loom.com/embed/${loomMatch[1]}`;
+  }
+
   // If already an embed URL, return as-is
-  if (url.includes('youtube.com/embed/') || url.includes('player.vimeo.com/video/')) {
+  if (url.includes('youtube.com/embed/') || url.includes('player.vimeo.com/video/') || url.includes('loom.com/embed/')) {
     return url;
   }
   

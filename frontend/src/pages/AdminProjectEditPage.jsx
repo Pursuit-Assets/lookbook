@@ -274,29 +274,28 @@ function AdminProjectEditPage() {
     }
   };
 
-  // Helper to convert regular Vimeo URLs to player embed URLs
-  const normalizeVimeoUrl = (url) => {
+  // Helper to convert video URLs to embeddable format
+  const normalizeVideoUrl = (url) => {
     if (!url) return url;
-    
+
     // Trim whitespace and remove leading @ symbol if present
     url = url.trim().replace(/^@+/, '');
-    
-    // If it's already a player URL, return as is
-    if (url.includes('player.vimeo.com')) return url;
-    
-    // Match various Vimeo URL formats and extract video ID
-    const patterns = [
-      /vimeo\.com\/(\d+)/,           // https://vimeo.com/123456789
-      /vimeo\.com\/video\/(\d+)/,    // https://vimeo.com/video/123456789
-    ];
-    
-    for (const pattern of patterns) {
-      const match = url.match(pattern);
-      if (match && match[1]) {
-        return `https://player.vimeo.com/video/${match[1]}`;
-      }
+
+    // If it's already an embed URL, return as is
+    if (url.includes('player.vimeo.com') || url.includes('loom.com/embed/')) return url;
+
+    // Vimeo
+    const vimeoMatch = url.match(/vimeo\.com\/(?:video\/)?(\d+)/);
+    if (vimeoMatch) {
+      return `https://player.vimeo.com/video/${vimeoMatch[1]}`;
     }
-    
+
+    // Loom: share URLs → embed URLs
+    const loomMatch = url.match(/loom\.com\/share\/([a-f0-9]+)/i);
+    if (loomMatch) {
+      return `https://www.loom.com/embed/${loomMatch[1]}`;
+    }
+
     // If no pattern matches, return cleaned URL
     return url;
   };
@@ -304,15 +303,15 @@ function AdminProjectEditPage() {
   // Handle demo video URL change with automatic conversion
   const handleDemoVideoChange = (e) => {
     const rawUrl = e.target.value;
-    const normalizedUrl = normalizeVimeoUrl(rawUrl);
-    
+    const normalizedUrl = normalizeVideoUrl(rawUrl);
+
     // Show a toast if we converted the URL
     if (rawUrl !== normalizedUrl && normalizedUrl) {
-      toast.info('Vimeo URL converted', {
-        description: 'Converted to player embed format'
+      toast.info('Video URL converted', {
+        description: 'Converted to embed format'
       });
     }
-    
+
     setFormData({ ...formData, demo_video_url: normalizedUrl });
   };
 
@@ -353,7 +352,7 @@ function AdminProjectEditPage() {
 
       
       // Normalize the video URL if it exists
-      const normalizedVideoUrl = project.demo_video_url ? normalizeVimeoUrl(project.demo_video_url) : '';
+      const normalizedVideoUrl = project.demo_video_url ? normalizeVideoUrl(project.demo_video_url) : '';
       
       setFormData({
         title: project.title || '',
@@ -1146,11 +1145,11 @@ function AdminProjectEditPage() {
                   value={formData.demo_video_url}
                   onChange={handleDemoVideoChange}
                   rows={3}
-                  placeholder="Vimeo URL (will be auto-converted to embed format)"
+                  placeholder="Vimeo or Loom URL (will be auto-converted to embed format)"
                   className="bg-white text-gray-900"
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  Paste any Vimeo URL (e.g., https://vimeo.com/1234567) and it will be automatically converted to the embed format
+                  Paste any Vimeo or Loom URL and it will be automatically converted to embed format
                 </p>
               </div>
             </CardContent>
@@ -1604,7 +1603,7 @@ function AdminProjectEditPage() {
                       <Input
                         value={formData.demo_video_url}
                         onChange={handleDemoVideoChange}
-                        placeholder="https://vimeo.com/... (will auto-convert)"
+                        placeholder="https://vimeo.com/... or https://loom.com/share/... (will auto-convert)"
                         className="mt-1 bg-white text-gray-900"
                       />
                     </div>
