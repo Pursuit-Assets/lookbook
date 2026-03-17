@@ -26,14 +26,14 @@ const getAllProjects = async (filters = {}) => {
       SELECT json_agg(
         json_build_object(
           'slug', prof.slug,
-          'name', u.first_name || ' ' || u.last_name,
+          'name', COALESCE(u.first_name || ' ' || u.last_name, initcap(replace(prof.slug, '-', ' '))),
           'photoUrl', prof.photo_url,
           'role', pp.role
         ) ORDER BY pp.display_order
       )
       FROM lookbook_project_participants pp
       JOIN lookbook_profiles prof ON pp.profile_id = prof.id
-      JOIN users u ON prof.user_id = u.user_id
+      LEFT JOIN users u ON prof.user_id = u.user_id
       WHERE pp.project_id = p.id
     ) as participants,
   ` : `NULL as participants,`;
