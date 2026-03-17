@@ -681,7 +681,7 @@ function PersonDetailPage() {
   const [person, setPerson] = useState(null);
   const [project, setProject] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [gridListLoading, setGridListLoading] = useState(false); // Loading state for grid/list views
+  const [gridListLoading, setGridListLoading] = useState(true); // Loading state for grid/list views
   const [loadingMore, setLoadingMore] = useState(false); // Loading state for progressive loading of additional projects
   const [slowLoadWarning, setSlowLoadWarning] = useState(false); // True after 5s of loading (cold start feedback)
   const [error, setError] = useState(null);
@@ -724,6 +724,10 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
       setError(null);
       setPerson(null);
       setProject(null);
+      // Eagerly mark as loading so the empty-state message never flashes while
+      // the data fetch (which runs in a separate useEffect) is in-flight.
+      const switchTargetHasData = isPeople ? allProfiles.length > 0 : allProjects.length > 0;
+      if (!switchTargetHasData) setGridListLoading(true);
       setPeopleFilters({ search: '', skills: [], industries: [], openToWork: false });
       setPeopleSearchInput('');
       setProjectFilters({ search: '', skills: [], sectors: [] });
@@ -3389,7 +3393,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
           )}
 
           {/* Show "No results" without Card wrapper, or show content in Card */}
-          {(viewMode === 'people' && allProfiles.length === 0 && !person) || (viewMode === 'projects' && allProjects.length === 0 && !project) ? (
+          {!loading && ((viewMode === 'people' && allProfiles.length === 0 && !person) || (viewMode === 'projects' && allProjects.length === 0 && !project)) ? (
             <div className="flex flex-col items-center justify-center" style={{minHeight: 'calc(100vh - 12rem)', gap: '1rem'}}>
               <Frown className="text-[#4242ea] error-icon" style={{width: '3rem', height: '3rem'}} strokeWidth={1.5} stroke="#4242ea" />
               <p className="text-[#4242ea] uppercase" style={{fontFamily: "'Galano Grotesque', sans-serif", fontSize: '1.5rem', fontWeight: 400}}>
