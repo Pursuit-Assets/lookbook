@@ -213,8 +213,7 @@ const ProfileCard = ({ prof, onClick }) => {
       ref={setCardRef}
       className={`rounded-xl person-card-wrapper ${isFeatured ? 'featured' : ''} person-card-cursor`}
       style={{
-        transformStyle: 'preserve-3d',
-        WebkitTransformStyle: 'preserve-3d'
+        overflow: 'hidden'
       }}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
@@ -389,8 +388,7 @@ const ProjectCard = ({ proj, onClick }) => {
       ref={setCardRef}
       className={`rounded-xl project-card-wrapper ${isFeatured ? 'featured' : ''} project-card-cursor`}
       style={{
-        transformStyle: 'preserve-3d',
-        WebkitTransformStyle: 'preserve-3d'
+        overflow: 'hidden'
       }}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
@@ -1276,6 +1274,10 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
       return;
     }
     
+    // Clear stale error immediately so previous navigation's error doesn't flash
+    // on screen while the new fetch is in-flight.
+    setError(null);
+
     // Guard: skip if the URL path doesn't match the current viewMode.
     // This prevents a race condition where setViewMode() fires before navigate()
     // updates the URL (e.g. switching from /people/:slug to /projects via the
