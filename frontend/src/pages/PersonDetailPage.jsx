@@ -833,7 +833,7 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
         skills: projectSkillsFilter.length > 0 ? projectSkillsFilter : undefined,
         sectors: projectSectorsFilter.length > 0 ? projectSectorsFilter : undefined,
         cohort: cohortFilter,
-        includeParticipants: false
+        includeParticipants: true
       });
     } else {
       profilesAPI.getAll({
@@ -1038,7 +1038,7 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
                 skills: projectSkillsFilter.length > 0 ? projectSkillsFilter : undefined,
                 sectors: projectSectorsFilter.length > 0 ? projectSectorsFilter : undefined,
                 cohort: cohortFilter,
-                includeParticipants: false
+                includeParticipants: true
               });
 
               if (controller.signal.aborted) return;
@@ -1064,7 +1064,7 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
                       skills: projectSkillsFilter.length > 0 ? projectSkillsFilter : undefined,
                       sectors: projectSectorsFilter.length > 0 ? projectSectorsFilter : undefined,
                       cohort: cohortFilter,
-                      includeParticipants: false
+                      includeParticipants: true
                     });
 
                     if (!controller.signal.aborted && remainingResponse.success) {
@@ -1090,7 +1090,7 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
                 skills: projectSkillsFilter.length > 0 ? projectSkillsFilter : undefined,
                 sectors: projectSectorsFilter.length > 0 ? projectSectorsFilter : undefined,
                 cohort: cohortFilter,
-                includeParticipants: false
+                includeParticipants: true
               });
 
               if (controller.signal.aborted) return;
@@ -1168,7 +1168,7 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
               skills: projectSkillsFilter.length > 0 ? projectSkillsFilter : undefined,
               sectors: projectSectorsFilter.length > 0 ? projectSectorsFilter : undefined,
               cohort: cohortFilter,
-              includeParticipants: false // Don't need participants for list view
+              includeParticipants: true
             });
 
             if (controller.signal.aborted) return;
