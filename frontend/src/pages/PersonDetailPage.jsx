@@ -2428,8 +2428,9 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
                     : 'translateX(calc(5rem + 8px))'
                 }}
               />
-              <button 
+              <button
                 className="rounded hover:bg-gray-100/50"
+                aria-label="Grid view"
                 data-active={layoutView === 'grid'}
                 onClick={() => {
                   setLayoutView('grid');
@@ -2442,8 +2443,9 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
               >
                 <Grid3x3 className="w-4 h-4" />
               </button>
-              <button 
-                className="rounded hover:bg-gray-100/50" 
+              <button
+                className="rounded hover:bg-gray-100/50"
+                aria-label="Detail view"
                 data-active={layoutView === 'detail'}
                 onClick={() => {
                   if (!slug) {
@@ -2471,8 +2473,9 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
               >
                 <Square className="w-4 h-4" />
               </button>
-              <button 
+              <button
                 className="rounded hover:bg-gray-100/50"
+                aria-label="List view"
                 data-active={layoutView === 'list'}
                 onClick={() => setLayoutView('list')}
               >
