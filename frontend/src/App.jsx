@@ -61,6 +61,17 @@ function App() {
               <Route path="/admin/bulk-upload" element={<ProtectedRoute><AdminBulkUploadPage /></ProtectedRoute>} />
               <Route path="/admin/taxonomy" element={<ProtectedRoute><AdminTaxonomyPage /></ProtectedRoute>} />
               <Route path="/admin/initiatives" element={<ProtectedRoute><AdminInitiativesPage /></ProtectedRoute>} />
+
+              {/* 404 */}
+              <Route path="*" element={
+                <div className="flex items-center justify-center min-h-screen bg-gray-50">
+                  <div className="text-center">
+                    <p className="text-6xl font-bold text-[#4242ea]">404</p>
+                    <p className="mt-4 text-gray-600 text-lg">Page not found</p>
+                    <a href="/" className="mt-6 inline-block text-[#4242ea] underline">Go home</a>
+                  </div>
+                </div>
+              } />
             </Routes>
           </Suspense>
         </div>
