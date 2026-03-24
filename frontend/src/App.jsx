@@ -8,6 +8,8 @@ import ProtectedRoute from './components/ProtectedRoute';
 // Lazy load main user-facing pages (code splitting)
 const HomePage = lazy(() => import('./pages/HomePage'));
 const PersonDetailPage = lazy(() => import('./pages/PersonDetailPage'));
+const ProjectsPage = lazy(() => import('./pages/ProjectsPage'));
+const ProjectDetailPage = lazy(() => import('./pages/ProjectDetailPage'));
 const SearchPage = lazy(() => import('./pages/SearchPage'));
 const SharePage = lazy(() => import('./pages/SharePage'));
 
@@ -43,9 +45,9 @@ function App() {
               <Route path="/" element={<HomePage />} />
               <Route path="/people" element={<PersonDetailPage />} />
               <Route path="/people/:slug" element={<PersonDetailPage />} />
-              <Route path="/projects" element={<PersonDetailPage />} />
-              <Route path="/projects/filter/:filterSlug" element={<PersonDetailPage />} />
-              <Route path="/projects/:slug" element={<PersonDetailPage />} />
+              <Route path="/projects" element={<ProjectsPage />} />
+              <Route path="/projects/filter/:filterSlug" element={<ProjectsPage />} />
+              <Route path="/projects/:slug" element={<ProjectDetailPage />} />
               <Route path="/search" element={<SearchPage />} />
               <Route path="/share" element={<SharePage />} />
               
