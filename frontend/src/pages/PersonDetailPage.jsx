@@ -1466,7 +1466,7 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
             ? initiatives.find(i => i.slug === selectedInitiative)?.cohort_value 
             : undefined;
           
-          const [projectData, listData] = await Promise.all([
+          const [projectDataResult, listDataResult] = await Promise.allSettled([
             projectsAPI.getBySlug(slug), // This already includes participants
             projectsAPI.getAll({
               limit: 100,
@@ -1482,16 +1482,24 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
           if (currentFetchVersion !== fetchVersionRef.current) {
             return; // Discard stale response
           }
+
+          const projectData = projectDataResult.status === 'fulfilled'
+            ? projectDataResult.value
+            : (projectDataResult.reason?.response?.data || { success: false, error: 'Project not found' });
+
+          const listData = listDataResult.status === 'fulfilled'
+            ? listDataResult.value
+            : { success: false };
           
           setLoadingProgress(70);
           
           // Update allProjects with filtered/unfiltered list from API (single source of truth)
-          if (listData.success) {
+          if (listData && listData.success) {
             setAllProjects(listData.data);
             setTotalProjects(listData.data.length);
           }
           
-          const projects = listData.success ? listData.data : allProjects;
+          const projects = listData && listData.success ? listData.data : allProjects;
           
           if (projectData.success) {
             const project = projectData.data;
@@ -1542,8 +1550,9 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
               setError(null);
             } else {
               // Actual error - project doesn't exist
-            setError('Project not found');
-          }
+              const errorMessage = projectData?.error || 'Project not found';
+              setError(errorMessage);
+            }
           }
           setLoadingProgress(100);
           completeLoading();
@@ -1553,7 +1562,8 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
             return; // Discard stale error
           }
           console.error('Error fetching project:', err);
-          setError('Project not found');
+          const errorMessage = err.response?.data?.error || err.response?.data?.message || 'Project not found';
+          setError(errorMessage);
           setLoadingProgress(100);
           completeLoading();
         } finally {
