@@ -80,6 +80,7 @@ router.get('/', async (req, res) => {
     const cachedResult = getCachedProjects(cacheKey);
     if (cachedResult) {
       console.log(`📦 Cache HIT for projects query`);
+      res.set('Cache-Control', 'public, max-age=600');
       return res.json({
         success: true,
         data: cachedResult.projects,
@@ -106,7 +107,8 @@ router.get('/', async (req, res) => {
       setCachedProjects(cacheKey, result);
       
       console.log(`✅ Fetched ${result.projects.length} projects in ${queryTime}ms (cached for next request)`);
-      
+
+      res.set('Cache-Control', 'public, max-age=600');
       res.json({
         success: true,
         data: result.projects,
@@ -172,6 +174,7 @@ router.get('/filters', async (req, res) => {
       projectQueries.getAllCohorts()
     ]);
     
+    res.set('Cache-Control', 'public, max-age=300');
     res.json({
       success: true,
       data: {
@@ -207,6 +210,7 @@ router.get('/:slug', async (req, res) => {
       });
     }
     
+    res.set('Cache-Control', 'public, max-age=600');
     res.json({
       success: true,
       data: project

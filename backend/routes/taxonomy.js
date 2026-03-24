@@ -9,8 +9,9 @@ const taxonomyQueries = require('../queries/taxonomyQueries');
 router.get('/skills', async (req, res) => {
   try {
     const skills = await taxonomyQueries.getAllSkills();
-    res.json({ 
-      success: true, 
+    res.set('Cache-Control', 'public, max-age=3600');
+    res.json({
+      success: true,
       data: skills,
       total: skills.length
     });
@@ -30,8 +31,9 @@ router.get('/skills', async (req, res) => {
 router.get('/industries', async (req, res) => {
   try {
     const industries = await taxonomyQueries.getAllIndustries();
-    res.json({ 
-      success: true, 
+    res.set('Cache-Control', 'public, max-age=3600');
+    res.json({
+      success: true,
       data: industries,
       total: industries.length
     });

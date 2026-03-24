@@ -116,6 +116,7 @@ router.get('/suggestions', async (req, res) => {
       industry.toLowerCase().includes(query)
     ).slice(0, 10);
     
+    res.set('Cache-Control', 'public, max-age=300');
     res.json({
       success: true,
       data: suggestions

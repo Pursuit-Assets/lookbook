@@ -88,8 +88,9 @@ app.use((req, res, next) => {
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'healthy', 
+  res.set('Cache-Control', 'no-store');
+  res.json({
+    status: 'healthy',
     timestamp: new Date().toISOString(),
     service: 'lookbook-api'
   });
@@ -99,14 +100,15 @@ app.get('/api/health', (req, res) => {
 app.get('/api/health/db', async (req, res) => {
   try {
     const result = await pool.query('SELECT NOW()');
-    res.json({ 
-      status: 'connected', 
-      timestamp: result.rows[0].now 
+    res.set('Cache-Control', 'no-store');
+    res.json({
+      status: 'connected',
+      timestamp: result.rows[0].now
     });
   } catch (error) {
-    res.status(500).json({ 
-      status: 'error', 
-      message: error.message 
+    res.status(500).json({
+      status: 'error',
+      message: error.message
     });
   }
 });

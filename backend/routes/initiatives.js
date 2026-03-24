@@ -49,6 +49,7 @@ router.get('/', async (req, res) => {
     const cachedResult = getCachedInitiatives(cacheKey);
     if (cachedResult) {
       console.log(`📦 Cache HIT for initiatives query`);
+      res.set('Cache-Control', 'public, max-age=600');
       return res.json({
         success: true,
         data: cachedResult
@@ -69,7 +70,8 @@ router.get('/', async (req, res) => {
     setCachedInitiatives(cacheKey, initiatives);
     
     console.log(`✅ Fetched ${initiatives.length} initiatives in ${queryTime}ms (cached for next request)`);
-    
+
+    res.set('Cache-Control', 'public, max-age=600');
     res.json({
       success: true,
       data: initiatives
@@ -102,6 +104,7 @@ router.get('/:slug', async (req, res) => {
     // Get project count
     const projectCount = await initiativeQueries.getProjectCountByInitiative(initiative.cohort_value);
     
+    res.set('Cache-Control', 'public, max-age=600');
     res.json({
       success: true,
       data: {
