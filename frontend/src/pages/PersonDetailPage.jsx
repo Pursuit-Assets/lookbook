@@ -3406,7 +3406,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
           )}
 
           {/* Show "No results" without Card wrapper, or show content in Card */}
-          {!loading && ((viewMode === 'people' && allProfiles.length === 0 && !person) || (viewMode === 'projects' && allProjects.length === 0 && !project)) ? (
+          {!loading && !gridListLoading && ((viewMode === 'people' && allProfiles.length === 0 && !person) || (viewMode === 'projects' && allProjects.length === 0 && !project)) ? (
             <div className="flex flex-col items-center justify-center" style={{minHeight: 'calc(100vh - 12rem)', gap: '1rem'}}>
               <Frown className="text-[#4242ea] error-icon" style={{width: '3rem', height: '3rem'}} strokeWidth={1.5} stroke="#4242ea" />
               <p className="text-[#4242ea] uppercase" style={{fontFamily: "'Galano Grotesque', sans-serif", fontSize: '1.5rem', fontWeight: 400}}>
