@@ -18,6 +18,8 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Linkedin, Globe, Camera, Code, Rocket, Zap, Lightbulb, Target, Square, Grid3x3, List, ChevronLeft, ChevronRight, Menu, X, Frown, Search, Building2, Briefcase, Store, Sparkles, Sprout, MessageCircle } from 'lucide-react';
 import ContactModal from '../components/ContactModal';
+import AmbassadorCard from '../components/AmbassadorCard';
+import AmbassadorDetailView from '../components/AmbassadorDetailView';
 
 // Custom hook for debounced value
 const useDebounce = (value, delay) => {
@@ -886,6 +888,10 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
 
   const filteredProjects = useMemo(() => {
     return allProjects.filter(project => {
+      // Exclude UFT AI Ambassador projects from main projects grid
+      if (!isFilterUrl && !selectedInitiative && project.cohort === 'UFT AI Ambassadors') {
+        return false;
+      }
       // Initiative filter (cohort-based)
       if (selectedInitiative) {
         const initiative = initiatives.find(i => i.slug === selectedInitiative);
@@ -2903,6 +2909,16 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                     >
                       {/* In grid view, apply client-side filters */}
                       {filteredProjects.map((proj, idx) => (
+                        proj.cohort === 'UFT AI Ambassadors' ? (
+    <AmbassadorCard
+      key={proj.slug}
+      project={proj}
+      onClick={() => {
+        setLayoutView('detail');
+        navigate(`/projects/${proj.slug}`);
+      }}
+    />
+  ) : (
                         <MemoizedProjectCard
                           key={proj.slug}
                           proj={proj}
@@ -3726,8 +3742,13 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
               </>
               )}
 
-              {/* Project View */}
-              {viewMode === 'projects' && project && (
+             {/* Project View — Ambassador */}
+              {viewMode === 'projects' && project && project.cohort === 'UFT AI Ambassadors' && (
+                <AmbassadorDetailView project={project} />
+              )}
+
+              {/* Project View — Standard */}
+              {viewMode === 'projects' && project && project.cohort !== 'UFT AI Ambassadors' && (
               <>
               <div className="mb-6">
                 {/* Project Info */}
