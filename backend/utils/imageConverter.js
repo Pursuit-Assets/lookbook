@@ -60,17 +60,41 @@ function isBase64Image(str) {
 }
 
 /**
+ * Resolve an /uploads/... URL to an absolute filesystem path.
+ * @param {string} imageUrl
+ * @returns {string|null}
+ */
+function resolveUploadFilePath(imageUrl) {
+  if (!imageUrl || typeof imageUrl !== 'string' || !imageUrl.startsWith('/uploads/')) {
+    return null;
+  }
+
+  const relativePath = imageUrl.replace(/^\/uploads\//, '');
+  return path.join(__dirname, '..', 'public', 'uploads', relativePath);
+}
+
+/**
+ * Returns true when an /uploads/... file exists on disk.
+ * @param {string} imageUrl
+ * @returns {boolean}
+ */
+function uploadFileExists(imageUrl) {
+  const filepath = resolveUploadFilePath(imageUrl);
+  return Boolean(filepath && fs.existsSync(filepath));
+}
+
+/**
  * Deletes an image file from the uploads directory
  * @param {string} imageUrl - The image URL (e.g., '/uploads/profiles/abc123.jpg')
  * @returns {boolean} - Success status
  */
 function deleteImageFile(imageUrl) {
-  if (!imageUrl || !imageUrl.startsWith('/uploads/')) {
+  const filepath = resolveUploadFilePath(imageUrl);
+  if (!filepath) {
     return false;
   }
 
   try {
-    const filepath = path.join(__dirname, '..', 'public', imageUrl);
     if (fs.existsSync(filepath)) {
       fs.unlinkSync(filepath);
       return true;
@@ -138,6 +162,10 @@ async function processBase64Image(base64String, directory, prefix = '', options 
     const smallUrl = `/uploads/${directory}/${smallFilename}`;
     const srcset = `${smallUrl} 400w, ${url} ${maxWidth}w`;
 
+    if (!fs.existsSync(fullPath)) {
+      throw new Error(`Processed image file was not written: ${fullPath}`);
+    }
+
     return { url, srcset };
   } catch (err) {
     console.warn('Sharp not available, falling back to original format:', err.message);
@@ -151,6 +179,8 @@ module.exports = {
   base64ToFile,
   isBase64Image,
   deleteImageFile,
+  resolveUploadFilePath,
+  uploadFileExists,
   processBase64Image
 };
 

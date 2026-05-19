@@ -6,9 +6,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Search, Edit, Eye, Trash2 } from 'lucide-react';
+import { Plus, Search, Edit, Eye, Trash2, Database } from 'lucide-react';
 import { toast } from 'sonner';
 import ConfirmDialog from '../components/ConfirmDialog';
+import AddFromDatabaseModal from '../components/AddFromDatabaseModal';
 
 function AdminPeoplePage() {
   const location = useLocation();
@@ -16,6 +17,7 @@ function AdminPeoplePage() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [deleteDialog, setDeleteDialog] = useState({ isOpen: false, person: null });
+  const [dbModalOpen, setDbModalOpen] = useState(false);
   const prevLocationKeyRef = useRef(null);
   const lastFetchTimeRef = useRef(0);
   const hasRefreshedFromStateRef = useRef(false);
@@ -119,12 +121,22 @@ function AdminPeoplePage() {
             <h1 className="text-3xl font-bold text-gray-900">People</h1>
             <p className="text-gray-500 mt-1">Manage team members and their profiles</p>
           </div>
-          <Link to="/admin/people/new/edit">
-            <Button className="flex items-center gap-2" style={{backgroundColor: '#4242ea'}}>
-              <Plus className="w-4 h-4" />
-              Add Person
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              className="flex items-center gap-2"
+              onClick={() => setDbModalOpen(true)}
+            >
+              <Database className="w-4 h-4" />
+              Add from Database
             </Button>
-          </Link>
+            <Link to="/admin/people/new/edit">
+              <Button className="flex items-center gap-2" style={{backgroundColor: '#4242ea'}}>
+                <Plus className="w-4 h-4" />
+                Add New Person
+              </Button>
+            </Link>
+          </div>
         </div>
 
         {/* Search */}
@@ -289,6 +301,11 @@ function AdminPeoplePage() {
         onClose={handleDeleteCancel}
         onConfirm={handleDeleteConfirm}
         message={`Delete ${deleteDialog.person?.name || 'this person'}?`}
+      />
+
+      <AddFromDatabaseModal
+        isOpen={dbModalOpen}
+        onClose={() => setDbModalOpen(false)}
       />
     </AdminLayout>
   );

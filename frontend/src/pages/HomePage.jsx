@@ -22,15 +22,18 @@ function HomePage() {
     let timeoutId;
     const fetchProjects = async () => {
       try {
-        const data = await projectsAPI.getAll({ limit: 12 });
+        const data = await projectsAPI.getAll({ limit: 12, excludeAmbassadors: true });
         if (data.success) {
-          setProjects(data.data);
+          const rows = (data.data || []).filter(
+            (p) => p.cohort !== 'UFT AI Ambassadors' && !(typeof p.summary === 'string' && p.summary.includes('"ambassador_name"'))
+          );
+          setProjects(rows);
           // Initialize with first 5 projects for display
-          setVisibleProjects(data.data.slice(0, 5));
+          setVisibleProjects(rows.slice(0, 5));
           
           // Extract all project images
           const images = [];
-          data.data.forEach(project => {
+          rows.forEach(project => {
             if (project.main_image_url) {
               try {
                 const parsed = JSON.parse(project.main_image_url);

@@ -5,7 +5,7 @@ const express = require('express');
 const router = express.Router();
 const profileQueries = require('../queries/profileQueries');
 const { pool } = require('../db/dbConfig');
-const { processBase64Image, isBase64Image } = require('../utils/imageConverter');
+const { processBase64Image, isBase64Image, uploadFileExists } = require('../utils/imageConverter');
 
 // Simple in-memory cache for profiles (5 minute TTL)
 const cache = {
@@ -19,6 +19,24 @@ const cache = {
 // Helper to check if cache is valid
 function isCacheValid(timestamp) {
   return Date.now() - timestamp < cache.TTL;
+}
+
+async function resolveProfilePhotoUrl(rawPhotoUrl, slug) {
+  if (!rawPhotoUrl) return null;
+
+  if (isBase64Image(rawPhotoUrl)) {
+    const result = await processBase64Image(rawPhotoUrl, 'profiles', `${slug}-`, { maxWidth: 800, quality: 85 });
+    if (!uploadFileExists(result.url)) {
+      throw new Error(`Profile photo could not be saved for ${slug}`);
+    }
+    return result.url;
+  }
+
+  if (typeof rawPhotoUrl === 'string' && rawPhotoUrl.startsWith('/uploads/') && !uploadFileExists(rawPhotoUrl)) {
+    throw new Error(`Profile photo file is missing on disk: ${rawPhotoUrl}`);
+  }
+
+  return rawPhotoUrl;
 }
 
 // =====================================================
@@ -125,6 +143,217 @@ router.get('/filters', async (req, res) => {
       success: false,
       error: 'Failed to fetch filter options',
       message: error.message 
+    });
+  }
+});
+
+// =====================================================
+// GET /api/profiles/available-users
+// Fetch users from the users table who don't have lookbook profiles yet
+// Supports filtering by cohort, search, role
+// MUST be defined before /:slug to avoid Express matching "available-users" as a slug
+// =====================================================
+
+router.get('/available-users', async (req, res) => {
+  try {
+    const { search, cohort, role, limit = 100, offset = 0 } = req.query;
+
+    const conditions = ['p.id IS NULL'];
+    const params = [];
+    let paramCount = 1;
+
+    if (search) {
+      conditions.push(`(
+        u.first_name ILIKE $${paramCount} OR
+        u.last_name ILIKE $${paramCount} OR
+        u.email ILIKE $${paramCount} OR
+        CONCAT(u.first_name, ' ', u.last_name) ILIKE $${paramCount}
+      )`);
+      params.push(`%${search}%`);
+      paramCount++;
+    }
+
+    if (cohort) {
+      conditions.push(`u.cohort = $${paramCount}`);
+      params.push(cohort);
+      paramCount++;
+    }
+
+    if (role) {
+      conditions.push(`u.role = $${paramCount}`);
+      params.push(role);
+      paramCount++;
+    }
+
+    const whereClause = conditions.length > 0
+      ? 'WHERE ' + conditions.join(' AND ')
+      : '';
+
+    const query = `
+      SELECT
+        u.user_id,
+        u.first_name,
+        u.last_name,
+        u.email,
+        u.role,
+        u.cohort,
+        CONCAT(u.first_name, ' ', u.last_name) AS full_name
+      FROM users u
+      LEFT JOIN lookbook_profiles p ON u.user_id = p.user_id
+      ${whereClause}
+      ORDER BY u.last_name, u.first_name
+      LIMIT $${paramCount} OFFSET $${paramCount + 1}
+    `;
+    params.push(parseInt(limit), parseInt(offset));
+
+    const countQuery = `
+      SELECT COUNT(*) as total
+      FROM users u
+      LEFT JOIN lookbook_profiles p ON u.user_id = p.user_id
+      ${whereClause}
+    `;
+
+    const [usersResult, countResult] = await Promise.all([
+      pool.query(query, params),
+      pool.query(countQuery, params.slice(0, -2))
+    ]);
+
+    // Fetch distinct cohorts for the filter dropdown
+    const cohortsResult = await pool.query(`
+      SELECT DISTINCT u.cohort
+      FROM users u
+      LEFT JOIN lookbook_profiles p ON u.user_id = p.user_id
+      WHERE p.id IS NULL AND u.cohort IS NOT NULL AND u.cohort != ''
+      ORDER BY u.cohort
+    `);
+
+    res.json({
+      success: true,
+      data: usersResult.rows,
+      total: parseInt(countResult.rows[0].total),
+      cohorts: cohortsResult.rows.map(r => r.cohort)
+    });
+  } catch (error) {
+    console.error('Error fetching available users:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch available users',
+      message: error.message
+    });
+  }
+});
+
+// =====================================================
+// POST /api/profiles/bulk
+// Create lookbook profiles for multiple existing users
+// Expects { userIds: number[] }
+// MUST be defined before /:slug
+// =====================================================
+
+router.post('/bulk', async (req, res) => {
+  try {
+    const { userIds } = req.body;
+
+    if (!Array.isArray(userIds) || userIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'userIds must be a non-empty array'
+      });
+    }
+
+    const results = { success: [], failed: [] };
+
+    for (const userId of userIds) {
+      try {
+        const userResult = await pool.query(
+          'SELECT user_id, first_name, last_name, email FROM users WHERE user_id = $1',
+          [userId]
+        );
+        if (userResult.rows.length === 0) {
+          results.failed.push({ userId, error: 'User not found' });
+          continue;
+        }
+        const user = userResult.rows[0];
+
+        const existingProfile = await pool.query(
+          'SELECT id FROM lookbook_profiles WHERE user_id = $1',
+          [userId]
+        );
+        if (existingProfile.rows.length > 0) {
+          results.failed.push({
+            userId,
+            name: `${user.first_name} ${user.last_name}`,
+            error: 'Already has a lookbook profile'
+          });
+          continue;
+        }
+
+        let slug = `${user.first_name}-${user.last_name}`
+          .toLowerCase()
+          .replace(/[^a-z0-9-]/g, '')
+          .replace(/-+/g, '-')
+          .replace(/^-|-$/g, '');
+
+        // Handle slug collisions
+        let finalSlug = slug;
+        let suffix = 2;
+        while (true) {
+          const slugCheck = await pool.query(
+            'SELECT id FROM lookbook_profiles WHERE slug = $1',
+            [finalSlug]
+          );
+          if (slugCheck.rows.length === 0) break;
+          finalSlug = `${slug}-${suffix}`;
+          suffix++;
+        }
+
+        const newProfile = await profileQueries.createProfile({
+          userId,
+          slug: finalSlug,
+          title: null,
+          bio: null,
+          skills: [],
+          industryExpertise: [],
+          openToWork: false,
+          highlights: [],
+          photoUrl: null,
+          photoLqip: null,
+          linkedinUrl: null,
+          githubUrl: null,
+          websiteUrl: null,
+          xUrl: null,
+          featured: false
+        });
+
+        results.success.push({
+          userId,
+          name: `${user.first_name} ${user.last_name}`,
+          slug: finalSlug,
+          profileId: newProfile.id
+        });
+      } catch (err) {
+        results.failed.push({
+          userId,
+          error: err.message
+        });
+      }
+    }
+
+    // Invalidate cache
+    cache.profiles = null;
+    cache.filters = null;
+
+    res.status(201).json({
+      success: true,
+      data: results,
+      message: `Created ${results.success.length} profiles, ${results.failed.length} failed`
+    });
+  } catch (error) {
+    console.error('Error bulk creating profiles:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to bulk create profiles',
+      message: error.message
     });
   }
 });
@@ -349,14 +578,9 @@ router.post('/', async (req, res) => {
       }
     }
     
-    // Process base64 photo to optimized WebP file
+    const slug = profileData.slug.trim().toLowerCase();
     const rawPhotoUrl = profileData.photoUrl || profileData.photo_url || null;
-    let processedPhotoUrl = rawPhotoUrl;
-    if (isBase64Image(rawPhotoUrl)) {
-      const slug = profileData.slug.trim().toLowerCase();
-      const result = await processBase64Image(rawPhotoUrl, 'profiles', `${slug}-`, { maxWidth: 800, quality: 85 });
-      processedPhotoUrl = result.url;
-    }
+    const processedPhotoUrl = await resolveProfilePhotoUrl(rawPhotoUrl, slug);
 
     // Normalize field names: convert snake_case to camelCase
     // Handle both formats for compatibility
@@ -524,11 +748,30 @@ router.put('/:slug', async (req, res) => {
     // Separate experience from other updates
     const { experience, ...profileUpdates } = updates;
     
-    // Process base64 photo to optimized WebP file if present in update
+    let photoUpdateWarning = null;
     const rawPhotoUpdate = profileUpdates.photo_url || profileUpdates.photoUrl;
-    if (rawPhotoUpdate && isBase64Image(rawPhotoUpdate)) {
-      const result = await processBase64Image(rawPhotoUpdate, 'profiles', `${slug}-`, { maxWidth: 800, quality: 85 });
-      profileUpdates.photo_url = result.url;
+    if (rawPhotoUpdate !== undefined) {
+      if (isBase64Image(rawPhotoUpdate)) {
+        profileUpdates.photo_url = await resolveProfilePhotoUrl(rawPhotoUpdate, slug);
+      } else if (
+        typeof rawPhotoUpdate === 'string' &&
+        rawPhotoUpdate.startsWith('/uploads/') &&
+        !uploadFileExists(rawPhotoUpdate)
+      ) {
+        const existingProfile = await profileQueries.getProfileBySlug(slug);
+        const existingPhoto = existingProfile?.photo_url || existingProfile?.photoUrl;
+        if (existingPhoto === rawPhotoUpdate) {
+          // Allow saving other fields, but tell the client the photo still needs a re-upload.
+          delete profileUpdates.photo_url;
+          delete profileUpdates.photoUrl;
+          photoUpdateWarning =
+            'Your other changes were saved, but the photo file is missing. Upload the photo again, then save.';
+        } else {
+          throw new Error(`Profile photo file is missing on disk: ${rawPhotoUpdate}`);
+        }
+      } else {
+        profileUpdates.photo_url = rawPhotoUpdate;
+      }
       delete profileUpdates.photoUrl;
     }
 
@@ -602,8 +845,15 @@ router.put('/:slug', async (req, res) => {
             [userId]
           );
           const currentName = current.rows[0]?.display_name ?? null;
+          const desiredName = updates.name.trim();
+          const slugDisplayName = slug
+            .split('-')
+            .filter(Boolean)
+            .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+            .join(' ');
+          const effectiveCurrentName = (currentName && currentName.trim()) || slugDisplayName;
 
-          if (currentName !== updates.name.trim()) {
+          if (desiredName !== effectiveCurrentName) {
             try {
               await pool.query(
                 'UPDATE users SET first_name = $1, last_name = $2 WHERE user_id = $3',
@@ -612,7 +862,8 @@ router.put('/:slug', async (req, res) => {
               console.log('✅ Updated user name to:', updates.name);
             } catch (updateError) {
               if (updateError.code === '42501' || updateError.message.includes('permission denied')) {
-                nameUpdateWarning = 'Name could not be changed due to database permissions, but other changes were saved.';
+                nameUpdateWarning =
+                  'Profile saved. The linked user account name could not be updated (database permissions). The lookbook display name is unchanged.';
               } else {
                 console.error('⚠️ Name update failed:', updateError.message);
               }
@@ -660,8 +911,11 @@ router.put('/:slug', async (req, res) => {
       message: 'Profile updated successfully'
     };
     
-    if (nameUpdateWarning) {
-      response.warning = nameUpdateWarning;
+    const warnings = [nameUpdateWarning, photoUpdateWarning].filter(Boolean);
+    if (warnings.length === 1) {
+      response.warning = warnings[0];
+    } else if (warnings.length > 1) {
+      response.warning = warnings.join(' ');
     }
     
     res.json(response);
@@ -749,5 +1003,3 @@ router.post('/:slug/experience', async (req, res) => {
 });
 
 module.exports = router;
-
-

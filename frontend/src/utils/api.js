@@ -9,9 +9,35 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4002/api'
 // Helper to get the backend base URL (without /api)
 const BACKEND_BASE_URL = API_BASE_URL.replace('/api', '');
 
+const getGoogleDriveFileId = (url) => {
+  if (!url || typeof url !== 'string') return null;
+
+  const filePathMatch = url.match(/drive\.google\.com\/file\/d\/([^/]+)/);
+  if (filePathMatch) return filePathMatch[1];
+
+  try {
+    const parsedUrl = new URL(url);
+    if (
+      parsedUrl.hostname === 'drive.google.com' ||
+      parsedUrl.hostname === 'drive.usercontent.google.com'
+    ) {
+      return parsedUrl.searchParams.get('id');
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+};
+
 // Helper function to convert relative image URLs to absolute URLs
 export const getImageUrl = (url) => {
   if (!url) return url;
+
+  const driveFileId = getGoogleDriveFileId(url);
+  if (driveFileId) {
+    return `${API_BASE_URL}/image-proxy/google-drive/${encodeURIComponent(driveFileId)}`;
+  }
   
   // If it's already an absolute URL (http:// or https://), return as-is
   if (url.startsWith('http://') || url.startsWith('https://')) {
@@ -178,6 +204,11 @@ export const profilesAPI = {
     return api.delete(`/profiles/${slug}`);
   },
   addExperience: (slug, data) => api.post(`/profiles/${slug}/experience`, data),
+  getAvailableUsers: (filters = {}) => api.get('/profiles/available-users', { params: filters }),
+  bulkCreate: (userIds) => {
+    apiCache.clear();
+    return api.post('/profiles/bulk', { userIds });
+  },
 };
 
 // =====================================================

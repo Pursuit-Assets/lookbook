@@ -51,8 +51,29 @@ const adjustColor = (hex, percent) => {
     .toString(16).slice(1);
 };
 
+const isAmbassadorProject = (project) => {
+  if (!project) return false;
+  if (project.cohort === 'UFT AI Ambassadors') return true;
+  if (typeof project.summary !== 'string') return false;
+
+  try {
+    const parsedSummary = JSON.parse(project.summary);
+    return Boolean(parsedSummary && parsedSummary.ambassador_name);
+  } catch {
+    return false;
+  }
+};
+
+const excludeAmbassadorProjects = (projects) =>
+  (projects || []).filter((project) => !isAmbassadorProject(project));
+
+const PEOPLE_GROUP_BUILDERS = 'builders';
+const PEOPLE_GROUP_UFT = 'uft-ai-ambassadors';
+const UFT_COHORT_VALUE = 'UFT AI Ambassadors';
+const GRID_PAGE_SIZE = 8;
+
 // Reusable Page Navigation Button Component
-const PageNavButton = ({ onClick, disabled, direction = 'left', ariaLabel }) => {
+const PageNavButton = ({ onClick, onMouseEnter, disabled, direction = 'left', ariaLabel }) => {
   const isLeft = direction === 'left';
   const Icon = isLeft ? ChevronLeft : ChevronRight;
   const marginStyle = isLeft ? { marginRight: '5px' } : { marginLeft: '5px' };
@@ -60,6 +81,7 @@ const PageNavButton = ({ onClick, disabled, direction = 'left', ariaLabel }) => 
   return (
     <button
       onClick={onClick}
+      onMouseEnter={onMouseEnter}
       disabled={disabled}
       className={`page-nav-button ${isLeft ? 'page-nav-button-left' : ''} h-[40px] w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center`}
       style={{
@@ -122,6 +144,59 @@ const PageDisplay = ({ current, total, viewMode, isList = false, totalCount = nu
     </div>
   );
 };
+
+// Grid view pagination (People / Projects) — single source of truth for top + bottom bars
+const GridPaginationBar = memo(({
+  isLoading,
+  currentPage,
+  totalPages,
+  totalItems,
+  canPrev,
+  canNext,
+  onPrev,
+  onNext,
+  onPrefetchPrev,
+  onPrefetchNext,
+  widthClass = 'w-36',
+  displayClassName = '',
+  barClassName = '',
+}) => (
+  <div className={`flex items-center ${barClassName}`}>
+    <PageNavButton
+      onClick={onPrev}
+      onMouseEnter={onPrefetchPrev}
+      disabled={!canPrev}
+      direction="left"
+      ariaLabel="Previous page"
+    />
+    <div className={`text-base text-gray-700 ${widthClass} text-center bg-white rounded-md border-0 h-10 px-[15px] flex items-center justify-center ${displayClassName}`}>
+      {isLoading ? (
+        <>
+          <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-300 border-t-[#4242ea]" />
+          <span style={{ marginLeft: '0.5em' }}>Loading...</span>
+        </>
+      ) : totalItems === 0 ? (
+        <>
+          <span className="font-bold">0</span> <span style={{ marginLeft: '0.25em' }}>Pages</span>
+        </>
+      ) : (
+        <>
+          <span className="font-bold">{String(currentPage).padStart(2, '0')}</span>
+          <span style={{ marginLeft: 'calc(0.125em + 1px)', marginRight: '0.125em' }}>/</span>
+          {String(totalPages).padStart(2, '0')} <span style={{ marginLeft: '0.25em' }}>Pages</span>
+        </>
+      )}
+    </div>
+    <PageNavButton
+      onClick={onNext}
+      onMouseEnter={onPrefetchNext}
+      disabled={!canNext}
+      direction="right"
+      ariaLabel="Next page"
+    />
+  </div>
+));
+GridPaginationBar.displayName = 'GridPaginationBar';
 
 // Helper function to format name as "FirstName L."
 const formatNameShort = (fullName) => {
@@ -676,8 +751,10 @@ function PersonDetailPage() {
   const navigate = useNavigate();
   const location = useLocation();
   
-  // Check if we're on a filter URL
-  const isFilterUrl = location.pathname.includes('/filter/');
+  // Check route shape. Project and People filters use different data sources.
+  const isFilterUrl = location.pathname.startsWith('/projects/filter/');
+  const isPeopleFilterUrl = location.pathname.startsWith('/people/filter/');
+  const isUftPeopleDetail = location.pathname.startsWith('/people/uft/');
   // Initialize viewMode based on current URL path immediately
   const initialViewMode = location.pathname.startsWith('/projects') ? 'projects' : 'people';
   const [person, setPerson] = useState(null);
@@ -694,10 +771,12 @@ function PersonDetailPage() {
   const abortControllerRef = useRef(null); // AbortController to cancel in-flight requests on navigation
   const [allProfiles, setAllProfiles] = useState([]);
   const [allProjects, setAllProjects] = useState([]);
+  const [ambassadorProjects, setAmbassadorProjects] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(-1);
   const [viewMode, setViewMode] = useState(initialViewMode); // Initialize from URL
   const [layoutView, setLayoutView] = useState('grid'); // 'detail' or 'grid' - default to grid
   const [gridPage, setGridPage] = useState(0); // For grid pagination
+  const [paginationPending, setPaginationPending] = useState(false); // Freeze pagination UI during tab/filter transitions
   const [totalProfiles, setTotalProfiles] = useState(0); // Total count from server
   const [totalProjects, setTotalProjects] = useState(0); // Total count from server
 const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For project carousel
@@ -723,6 +802,8 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
     const isCurrentFilterUrl = location.pathname.includes('/filter/');
     if (wasPeople !== isPeople && !isCurrentFilterUrl) {
       // Switching between people and projects - reset everything including filters
+      setPaginationPending(true);
+      setGridPage(0);
       setError(null);
       setPerson(null);
       setProject(null);
@@ -735,6 +816,7 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
       setProjectFilters({ search: '', skills: [], sectors: [] });
       setProjectSearchInput('');
       setSelectedInitiative(null);
+      setSelectedPeopleGroup(PEOPLE_GROUP_BUILDERS);
       setSearchCommitted(false);
       setSearchFocused(false);
       setSearchHovered(false);
@@ -748,6 +830,7 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
       if (isPeople) {
         setPeopleFilters({ search: '', skills: [], industries: [], openToWork: false });
         setPeopleSearchInput('');
+        setSelectedPeopleGroup(PEOPLE_GROUP_BUILDERS);
       } else {
         setProjectFilters({ search: '', skills: [], sectors: [] });
         setProjectSearchInput('');
@@ -799,6 +882,20 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
   // Initiative filter for projects (SMB Winter 2025, Demo Day Fall 2025, etc.)
   const [selectedInitiative, setSelectedInitiative] = useState(null);
   const [initiatives, setInitiatives] = useState([]);
+  const [selectedPeopleGroup, setSelectedPeopleGroup] = useState(
+    location.pathname.startsWith('/people/uft/') || location.pathname === `/people/filter/${PEOPLE_GROUP_UFT}`
+      ? PEOPLE_GROUP_UFT
+      : PEOPLE_GROUP_BUILDERS
+  );
+  const isUftPeopleMode = viewMode === 'people' && selectedPeopleGroup === PEOPLE_GROUP_UFT;
+  const projectInitiatives = useMemo(
+    () => initiatives.filter(initiative => initiative.slug !== PEOPLE_GROUP_UFT),
+    [initiatives]
+  );
+  const uftInitiative = useMemo(
+    () => initiatives.find(initiative => initiative.slug === PEOPLE_GROUP_UFT),
+    [initiatives]
+  );
 
   // Debounce search terms to reduce API calls (500ms feels more responsive)
   const debouncedPeopleSearch = useDebounce(peopleFilters.search, 500);
@@ -811,22 +908,68 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
   const projectSkillsFilter = useMemo(() => projectFilters.skills, [JSON.stringify(projectFilters.skills)]);
   const projectSectorsFilter = useMemo(() => projectFilters.sectors, [JSON.stringify(projectFilters.sectors)]);
 
+  const showGridPagination =
+    layoutView === 'grid' &&
+    ((viewMode === 'projects' && !isFilterUrl && !selectedInitiative) ||
+      (viewMode === 'people' && !isUftPeopleMode));
+
+  const gridPagination = useMemo(() => {
+    const totalItems = viewMode === 'people' ? totalProfiles : totalProjects;
+    const totalPages = totalItems > 0 ? Math.max(1, Math.ceil(totalItems / GRID_PAGE_SIZE)) : 0;
+    const clampedPage = totalPages === 0 ? 0 : Math.min(gridPage, totalPages - 1);
+    const isLoading = gridListLoading || paginationPending;
+
+    return {
+      totalItems,
+      totalPages,
+      clampedPage,
+      currentPage: clampedPage + 1,
+      isLoading,
+      canPrev: !isLoading && clampedPage > 0 && totalPages > 1,
+      canNext: !isLoading && clampedPage < totalPages - 1 && totalPages > 1,
+    };
+  }, [
+    viewMode,
+    totalProfiles,
+    totalProjects,
+    gridPage,
+    gridListLoading,
+    paginationPending,
+  ]);
+
+  const goToPrevGridPage = useCallback(() => {
+    setGridPage((page) => Math.max(0, page - 1));
+  }, []);
+
+  const goToNextGridPage = useCallback(() => {
+    setGridPage((page) => {
+      const maxPage = Math.max(0, gridPagination.totalPages - 1);
+      return Math.min(maxPage, page + 1);
+    });
+  }, [gridPagination.totalPages]);
+
   // Prefetch next/previous page data on hover for instant pagination
   const prefetchPage = useCallback((pageOffset) => {
-    const targetPage = gridPage + pageOffset;
-    const pageSize = 8;
-    const maxPage = viewMode === 'projects' 
-      ? Math.ceil(totalProjects / pageSize) - 1
-      : Math.ceil(totalProfiles / pageSize) - 1;
-    
+    if (gridPagination.isLoading || gridPagination.totalPages <= 1) return;
+    const targetPage = gridPagination.clampedPage + pageOffset;
+    const maxPage = gridPagination.totalPages - 1;
+
     // Only prefetch if target page is valid
     if (targetPage < 0 || targetPage > maxPage) return;
-    
-    const offset = targetPage * pageSize;
-    const limit = pageSize;
+
+    const offset = targetPage * GRID_PAGE_SIZE;
+    const limit = GRID_PAGE_SIZE;
     
     // Prefetch the data (will be cached)
-    if (viewMode === 'projects') {
+    if (viewMode === 'people' && isUftPeopleMode) {
+      projectsAPI.getAll({
+        limit,
+        offset,
+        search: debouncedPeopleSearch,
+        cohort: UFT_COHORT_VALUE,
+        includeParticipants: true
+      });
+    } else if (viewMode === 'projects') {
       const cohortFilter = selectedInitiative 
         ? initiatives.find(i => i.slug === selectedInitiative)?.cohort_value 
         : undefined;
@@ -837,6 +980,7 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
         skills: projectSkillsFilter.length > 0 ? projectSkillsFilter : undefined,
         sectors: projectSectorsFilter.length > 0 ? projectSectorsFilter : undefined,
         cohort: cohortFilter,
+        excludeAmbassadors: true,
         includeParticipants: true
       });
     } else {
@@ -849,7 +993,7 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
         openToWork: peopleFilters.openToWork ? true : undefined
       });
     }
-  }, [gridPage, viewMode, totalProjects, totalProfiles, debouncedProjectSearch, debouncedPeopleSearch, projectSkillsFilter, projectSectorsFilter, peopleSkillsFilter, peopleIndustriesFilter, peopleFilters.openToWork, selectedInitiative, initiatives]);
+  }, [gridPagination, viewMode, debouncedProjectSearch, debouncedPeopleSearch, projectSkillsFilter, projectSectorsFilter, peopleSkillsFilter, peopleIndustriesFilter, peopleFilters.openToWork, selectedInitiative, initiatives, isUftPeopleMode, isFilterUrl]);
 
   // Filtered data based on search and filters
   const filteredProfiles = useMemo(() => allProfiles.filter(profile => {
@@ -888,8 +1032,8 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
 
   const filteredProjects = useMemo(() => {
     return allProjects.filter(project => {
-      // Exclude UFT AI Ambassador projects from main projects grid
-      if (!isFilterUrl && !selectedInitiative && project.cohort === 'UFT AI Ambassadors') {
+      // UFT ambassadors belong under People only — never show in Projects
+      if (isAmbassadorProject(project)) {
         return false;
       }
       // Initiative filter (cohort-based)
@@ -928,7 +1072,27 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
       
       return true;
     });
-  }, [allProjects, debouncedProjectSearch, projectFilters.skills, projectFilters.sectors, selectedInitiative, initiatives]);
+  }, [allProjects, debouncedProjectSearch, projectFilters.skills, projectFilters.sectors, selectedInitiative, initiatives, isFilterUrl]);
+
+  const filteredAmbassadorPeople = useMemo(() => {
+    return ambassadorProjects.filter(project => {
+      if (!isAmbassadorProject(project)) return false;
+
+      if (debouncedPeopleSearch) {
+        const searchLower = debouncedPeopleSearch.toLowerCase();
+        const summary = typeof project.summary === 'string' ? project.summary : '';
+        const matchesName = project.short_description?.toLowerCase().includes(searchLower);
+        const matchesBuild = project.title?.toLowerCase().includes(searchLower);
+        const matchesSummary = summary.toLowerCase().includes(searchLower);
+        const matchesSkills = project.skills?.some(skill => skill.toLowerCase().includes(searchLower));
+        if (!matchesName && !matchesBuild && !matchesSummary && !matchesSkills) return false;
+      }
+
+      return true;
+    });
+  }, [ambassadorProjects, debouncedPeopleSearch]);
+
+  const filteredPeopleCards = isUftPeopleMode ? filteredAmbassadorPeople : filteredProfiles;
 
   // Filter person's projects - always show all projects for that person
   // Filters don't affect the "Select Projects" section on person detail pages
@@ -946,7 +1110,16 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
   // Reset to first page when filters or search changes
   useEffect(() => {
     setGridPage(0);
-  }, [peopleFilters.skills, peopleFilters.industries, peopleFilters.openToWork, projectFilters.skills, projectFilters.sectors, debouncedPeopleSearch, debouncedProjectSearch, selectedInitiative]);
+    setPaginationPending(true);
+  }, [peopleFilters.skills, peopleFilters.industries, peopleFilters.openToWork, projectFilters.skills, projectFilters.sectors, debouncedPeopleSearch, debouncedProjectSearch, selectedInitiative, selectedPeopleGroup]);
+
+  // Keep grid page in range when totals shrink (e.g. after filter/tab change)
+  useEffect(() => {
+    if (paginationPending || gridListLoading) return;
+    if (gridPagination.clampedPage !== gridPage) {
+      setGridPage(gridPagination.clampedPage);
+    }
+  }, [gridPagination.clampedPage, gridPage, paginationPending, gridListLoading]);
 
   // Reset carousel index when filtered person projects change
   useEffect(() => {
@@ -964,11 +1137,14 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
       }
       const controller = new AbortController();
       abortControllerRef.current = controller;
+      const isCurrentRequest = () => abortControllerRef.current === controller && !controller.signal.aborted;
 
       let slowLoadTimer = null;
 
       // Only show loading spinner when we have no data to display (avoids flicker when switching tabs)
-      const hasCachedData = (viewMode === 'people' && allProfiles.length > 0) || (viewMode === 'projects' && allProjects.length > 0);
+      const hasCachedData =
+        (viewMode === 'people' && (isUftPeopleMode ? ambassadorProjects.length > 0 : allProfiles.length > 0)) ||
+        (viewMode === 'projects' && allProjects.length > 0);
 
       if (layoutView === 'grid' || layoutView === 'list') {
         isFetchingRef.current = true;
@@ -988,7 +1164,47 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
         const offset = shouldPaginate ? gridPage * pageSize : 0;
         const limit = shouldPaginate ? pageSize : 100; // Fetch all for initiative filters
         
-        if (viewMode === 'people') {
+        if (viewMode === 'people' && isUftPeopleMode) {
+          try {
+            setLoadingProgress(30);
+            const response = await projectsAPI.getAll({
+              limit: 100,
+              offset: 0,
+              search: debouncedPeopleSearch,
+              cohort: UFT_COHORT_VALUE,
+              includeParticipants: true
+            });
+
+            if (controller.signal.aborted) return;
+            setLoadingProgress(80);
+            if (response && response.success) {
+              setAmbassadorProjects(response.data || []);
+              const total = response.pagination?.total || response.total || (response.data ? response.data.length : 0);
+              setTotalProfiles(total);
+            } else {
+              console.error('API response error:', response);
+              setAmbassadorProjects([]);
+              setTotalProfiles(0);
+            }
+            setLoadingProgress(100);
+            completeLoading();
+          } catch (err) {
+            if (controller.signal.aborted) return;
+            console.error('Error fetching UFT ambassadors:', err);
+            setAmbassadorProjects([]);
+            setTotalProfiles(0);
+            setLoadingProgress(100);
+            completeLoading();
+          } finally {
+            if (slowLoadTimer) clearTimeout(slowLoadTimer);
+            if (isCurrentRequest()) {
+              setSlowLoadWarning(false);
+              setGridListLoading(false);
+              setPaginationPending(false);
+              isFetchingRef.current = false;
+            }
+          }
+        } else if (viewMode === 'people') {
           try {
             setLoadingProgress(30);
             const response = await profilesAPI.getAll({
@@ -1022,9 +1238,12 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
             completeLoading();
           } finally {
             if (slowLoadTimer) clearTimeout(slowLoadTimer);
-            setSlowLoadWarning(false);
-            setGridListLoading(false);
-            isFetchingRef.current = false;
+            if (isCurrentRequest()) {
+              setSlowLoadWarning(false);
+              setGridListLoading(false);
+              setPaginationPending(false);
+              isFetchingRef.current = false;
+            }
           }
         } else if (viewMode === 'projects') {
           try {
@@ -1033,7 +1252,6 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
             const cohortFilter = selectedInitiative
               ? initiatives.find(i => i.slug === selectedInitiative)?.cohort_value
               : undefined;
-
             // Use progressive loading for initiative filters to show results faster
             const useProgressiveLoading = (isFilterUrl || selectedInitiative) && !shouldPaginate;
 
@@ -1046,6 +1264,7 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
                 skills: projectSkillsFilter.length > 0 ? projectSkillsFilter : undefined,
                 sectors: projectSectorsFilter.length > 0 ? projectSectorsFilter : undefined,
                 cohort: cohortFilter,
+                excludeAmbassadors: true,
                 includeParticipants: true
               });
 
@@ -1053,16 +1272,20 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
               setLoadingProgress(80);
               if (initialResponse.success) {
                 // Show first batch immediately
-                setAllProjects(initialResponse.data);
-                const total = initialResponse.pagination?.total || initialResponse.total || initialResponse.data.length;
+                const projectRows = excludeAmbassadorProjects(initialResponse.data);
+                setAllProjects(projectRows);
+                const total = initialResponse.pagination?.total || initialResponse.total || projectRows.length;
                 setTotalProjects(total);
                 if (slowLoadTimer) clearTimeout(slowLoadTimer);
-                setSlowLoadWarning(false);
-                setGridListLoading(false); // Stop main loading spinner
-                completeLoading();
+                if (isCurrentRequest()) {
+                  setSlowLoadWarning(false);
+                  setGridListLoading(false); // Stop main loading spinner
+                  setPaginationPending(false);
+                  completeLoading();
+                }
 
                 // If there are more projects, fetch them in background
-                if (total > 8) {
+                if (total > 8 && isCurrentRequest()) {
                   setLoadingMore(true);
                   try {
                     const remainingResponse = await projectsAPI.getAll({
@@ -1072,19 +1295,25 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
                       skills: projectSkillsFilter.length > 0 ? projectSkillsFilter : undefined,
                       sectors: projectSectorsFilter.length > 0 ? projectSectorsFilter : undefined,
                       cohort: cohortFilter,
+                      excludeAmbassadors: true,
                       includeParticipants: true
                     });
 
                     if (!controller.signal.aborted && remainingResponse.success) {
                       // Append remaining projects
-                      setAllProjects(prev => [...prev, ...remainingResponse.data]);
+                      setAllProjects((prev) => [
+                        ...prev,
+                        ...excludeAmbassadorProjects(remainingResponse.data),
+                      ]);
                     }
                   } catch (bgErr) {
                     if (!controller.signal.aborted) {
                       console.error('Error fetching remaining projects:', bgErr);
                     }
                   } finally {
-                    setLoadingMore(false);
+                    if (isCurrentRequest()) {
+                      setLoadingMore(false);
+                    }
                   }
                 }
               }
@@ -1098,14 +1327,16 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
                 skills: projectSkillsFilter.length > 0 ? projectSkillsFilter : undefined,
                 sectors: projectSectorsFilter.length > 0 ? projectSectorsFilter : undefined,
                 cohort: cohortFilter,
+                excludeAmbassadors: true,
                 includeParticipants: true
               });
 
               if (controller.signal.aborted) return;
               setLoadingProgress(80);
               if (response.success) {
-                setAllProjects(response.data);
-                const total = response.pagination?.total || response.total || response.data.length;
+                const projectRows = excludeAmbassadorProjects(response.data);
+                setAllProjects(projectRows);
+                const total = response.pagination?.total || response.total || projectRows.length;
                 setTotalProjects(total);
               }
               setLoadingProgress(100);
@@ -1118,14 +1349,56 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
             completeLoading();
           } finally {
             if (slowLoadTimer) clearTimeout(slowLoadTimer);
-            setSlowLoadWarning(false);
-            setGridListLoading(false);
-            isFetchingRef.current = false;
+            if (isCurrentRequest()) {
+              setSlowLoadWarning(false);
+              setGridListLoading(false);
+              setPaginationPending(false);
+              isFetchingRef.current = false;
+            }
           }
         }
       } else if (layoutView === 'list') {
         // List view: fetch filtered data
-        if (viewMode === 'people') {
+        if (viewMode === 'people' && isUftPeopleMode) {
+          try {
+            setLoadingProgress(30);
+            const response = await projectsAPI.getAll({
+              limit: 100,
+              search: debouncedPeopleSearch,
+              cohort: UFT_COHORT_VALUE,
+              includeParticipants: true
+            });
+
+            if (controller.signal.aborted) return;
+            setLoadingProgress(80);
+            if (response && response.success) {
+              setAmbassadorProjects(response.data || []);
+              const total = response.pagination?.total || response.total || (response.data ? response.data.length : 0);
+              setTotalProfiles(total);
+            } else {
+              console.error('API response error:', response);
+              setAmbassadorProjects([]);
+              setTotalProfiles(0);
+            }
+            setLoadingProgress(100);
+            completeLoading();
+          } catch (err) {
+            if (controller.signal.aborted) return;
+            console.error('Error fetching UFT ambassadors:', err);
+            setAmbassadorProjects([]);
+            setTotalProfiles(0);
+            setLoadingProgress(100);
+            completeLoading();
+          } finally {
+            if (slowLoadTimer) clearTimeout(slowLoadTimer);
+            if (isCurrentRequest()) {
+              setSlowLoadWarning(false);
+              setGridListLoading(false);
+              setPaginationPending(false);
+              isFetchingRef.current = false;
+            }
+          }
+        } else if (viewMode === 'people') {
           try {
             setLoadingProgress(30);
             const response = await profilesAPI.getAll({
@@ -1158,9 +1431,12 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
             completeLoading();
           } finally {
             if (slowLoadTimer) clearTimeout(slowLoadTimer);
-            setSlowLoadWarning(false);
-            setGridListLoading(false);
-            isFetchingRef.current = false;
+            if (isCurrentRequest()) {
+              setSlowLoadWarning(false);
+              setGridListLoading(false);
+              setPaginationPending(false);
+              isFetchingRef.current = false;
+            }
           }
         } else if (viewMode === 'projects') {
           try {
@@ -1169,21 +1445,22 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
             const cohortFilter = selectedInitiative
               ? initiatives.find(i => i.slug === selectedInitiative)?.cohort_value
               : undefined;
-
             const response = await projectsAPI.getAll({
               limit: 100,
               search: debouncedProjectSearch,
               skills: projectSkillsFilter.length > 0 ? projectSkillsFilter : undefined,
               sectors: projectSectorsFilter.length > 0 ? projectSectorsFilter : undefined,
               cohort: cohortFilter,
+              excludeAmbassadors: true,
               includeParticipants: true
             });
 
             if (controller.signal.aborted) return;
             setLoadingProgress(80);
             if (response.success) {
-              setAllProjects(response.data);
-              const total = response.pagination?.total || response.total || response.data.length;
+              const projectRows = excludeAmbassadorProjects(response.data);
+              setAllProjects(projectRows);
+              const total = response.pagination?.total || response.total || projectRows.length;
               setTotalProjects(total);
             }
             setLoadingProgress(100);
@@ -1195,9 +1472,12 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
             completeLoading();
           } finally {
             if (slowLoadTimer) clearTimeout(slowLoadTimer);
-            setSlowLoadWarning(false);
-            setGridListLoading(false);
-            isFetchingRef.current = false;
+            if (isCurrentRequest()) {
+              setSlowLoadWarning(false);
+              setGridListLoading(false);
+              setPaginationPending(false);
+              isFetchingRef.current = false;
+            }
           }
         }
       }
@@ -1214,7 +1494,7 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
         abortControllerRef.current.abort();
       }
     };
-  }, [gridPage, viewMode, debouncedPeopleSearch, debouncedProjectSearch, peopleSkillsFilter, peopleIndustriesFilter, peopleFilters.openToWork, projectSkillsFilter, projectSectorsFilter, layoutView, selectedInitiative, initiatives]);
+  }, [gridPage, viewMode, debouncedPeopleSearch, debouncedProjectSearch, peopleSkillsFilter, peopleIndustriesFilter, peopleFilters.openToWork, projectSkillsFilter, projectSectorsFilter, layoutView, selectedInitiative, selectedPeopleGroup, isUftPeopleMode, initiatives]);
 
   // Fetch filters and initiatives once on mount - these are cached
   useEffect(() => {
@@ -1275,6 +1555,42 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
     fetchFilters();
   }, [filterSlug]); // Only re-run if filterSlug changes - filters are shared between tabs
 
+  // Keep initiative state in sync with the URL. This prevents stale async filter
+  // fetches from re-selecting an initiative after the user clears it.
+  useEffect(() => {
+    if (viewMode !== 'projects') return;
+
+    if (!filterSlug) {
+      if (selectedInitiative) {
+        setSelectedInitiative(null);
+      }
+      return;
+    }
+
+    const matchingInitiative = initiatives.find(i => i.slug === filterSlug);
+    if (matchingInitiative && selectedInitiative !== matchingInitiative.slug) {
+      setSelectedInitiative(matchingInitiative.slug);
+    }
+  }, [filterSlug, initiatives, selectedInitiative, viewMode]);
+
+  // UFT ambassadors live under People — redirect legacy Projects filter URLs
+  useEffect(() => {
+    if (viewMode === 'projects' && filterSlug === PEOPLE_GROUP_UFT) {
+      navigate(`/people/filter/${PEOPLE_GROUP_UFT}`, { replace: true });
+    }
+  }, [viewMode, filterSlug, navigate]);
+
+  // Keep People group state in sync with People URLs.
+  useEffect(() => {
+    if (viewMode !== 'people') return;
+
+    const shouldShowUft = isUftPeopleDetail || (isPeopleFilterUrl && filterSlug === PEOPLE_GROUP_UFT);
+    const nextGroup = shouldShowUft ? PEOPLE_GROUP_UFT : PEOPLE_GROUP_BUILDERS;
+    if (selectedPeopleGroup !== nextGroup) {
+      setSelectedPeopleGroup(nextGroup);
+    }
+  }, [filterSlug, isPeopleFilterUrl, isUftPeopleDetail, selectedPeopleGroup, viewMode]);
+
   useEffect(() => {
     // If no slug, default to grid view
     if (!slug) {
@@ -1307,11 +1623,11 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
     
     // Check if we already have this person/project loaded
     // This prevents full page refresh when transitioning from grid to detail
-    const hasExactData = (viewMode === 'people' && person?.slug === slug) || 
+    const hasExactData = (viewMode === 'people' && (isUftPeopleDetail ? project?.slug === slug : person?.slug === slug)) || 
                         (viewMode === 'projects' && project?.slug === slug);
     
     // Also check if the data is in our lists (from grid view)
-    const hasDataInList = (viewMode === 'people' && allProfiles.some(p => p.slug === slug)) ||
+    const hasDataInList = (viewMode === 'people' && (isUftPeopleDetail ? ambassadorProjects.some(p => p.slug === slug) : allProfiles.some(p => p.slug === slug))) ||
                           (viewMode === 'projects' && allProjects.some(p => p.slug === slug));
     
     // Only show loading screen if we don't have any data at all
@@ -1331,7 +1647,100 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
       // Don't clear project filters here - they're not used on person detail pages
     }
     
-    if (viewMode === 'people') {
+    if (viewMode === 'people' && isUftPeopleDetail) {
+      const fetchUftPersonAndList = async () => {
+        const hasBasicData = ambassadorProjects.some(p => p.slug === slug);
+        if (hasBasicData) {
+          setLoading(false);
+        }
+
+        startLoading();
+        setLoadingProgress(10);
+        try {
+          setLoadingProgress(30);
+          const [projectDataResult, listDataResult] = await Promise.allSettled([
+            projectsAPI.getBySlug(slug),
+            projectsAPI.getAll({
+              limit: 100,
+              search: debouncedPeopleSearch || undefined,
+              cohort: UFT_COHORT_VALUE,
+              includeParticipants: true
+            })
+          ]);
+
+          if (currentFetchVersion !== fetchVersionRef.current) {
+            return;
+          }
+
+          const projectData = projectDataResult.status === 'fulfilled'
+            ? projectDataResult.value
+            : (projectDataResult.reason?.response?.data || { success: false, error: 'UFT ambassador not found' });
+
+          const listData = listDataResult.status === 'fulfilled'
+            ? listDataResult.value
+            : { success: false };
+
+          setLoadingProgress(70);
+
+          if (listData && listData.success) {
+            setAmbassadorProjects(listData.data || []);
+            setTotalProfiles(listData.data?.length || 0);
+          }
+
+          const ambassadorList = listData && listData.success ? listData.data : ambassadorProjects;
+
+          if (projectData.success && isAmbassadorProject(projectData.data)) {
+            const ambassadorProject = projectData.data;
+            const currentProjectInList = ambassadorList.some(p => p.slug === slug);
+
+            if (currentProjectInList) {
+              setProject(ambassadorProject);
+              setPerson(null);
+              const index = ambassadorList.findIndex(p => p.slug === slug);
+              setCurrentIndex(index >= 0 ? index : -1);
+              setError(null);
+              analytics.projectViewed(
+                ambassadorProject.slug,
+                ambassadorProject.title,
+                ambassadorProject.skills || [],
+                ambassadorProject.sectors || []
+              );
+            } else if (ambassadorList.length > 0) {
+              setProject(null);
+              setPerson(null);
+              setCurrentIndex(-1);
+              setError(null);
+              navigate(`/people/uft/${ambassadorList[0].slug}`);
+              return;
+            } else {
+              setProject(null);
+              setPerson(null);
+              setCurrentIndex(-1);
+              setError(null);
+            }
+          } else {
+            const errorMessage = projectData?.error || 'UFT ambassador not found';
+            setError(errorMessage);
+          }
+          setLoadingProgress(100);
+          completeLoading();
+        } catch (err) {
+          if (currentFetchVersion !== fetchVersionRef.current) {
+            return;
+          }
+          console.error('Error fetching UFT ambassador:', err);
+          const errorMessage = err.response?.data?.error || err.response?.data?.message || 'UFT ambassador not found';
+          setError(errorMessage);
+          setLoadingProgress(100);
+          completeLoading();
+        } finally {
+          if (currentFetchVersion === fetchVersionRef.current) {
+            setLoading(false);
+          }
+        }
+      };
+      fetchUftPersonAndList();
+    } else if (viewMode === 'people') {
       const fetchPersonAndList = async () => {
         // Don't skip fetch when filters change - we need to refetch filtered list
         // Only skip if we have the exact person AND the list hasn't changed
@@ -1480,6 +1889,7 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
               skills: projectSkillsFilter.length > 0 ? projectSkillsFilter : undefined,
               sectors: projectSectorsFilter.length > 0 ? projectSectorsFilter : undefined,
               cohort: cohortFilter,
+              excludeAmbassadors: true,
               includeParticipants: false // Don't need participants for navigation list
             })
           ]);
@@ -1500,15 +1910,22 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
           setLoadingProgress(70);
           
           // Update allProjects with filtered/unfiltered list from API (single source of truth)
-          if (listData && listData.success) {
-            setAllProjects(listData.data);
-            setTotalProjects(listData.data.length);
-          }
-          
-          const projects = listData && listData.success ? listData.data : allProjects;
+          const listProjects = listData && listData.success
+            ? (listData.data || []).filter((p) => !isAmbassadorProject(p))
+            : allProjects.filter((p) => !isAmbassadorProject(p));
+
+          setAllProjects(listProjects);
+          setTotalProjects(listProjects.length);
+
+          const projects = listProjects;
           
           if (projectData.success) {
             const project = projectData.data;
+
+            if (isAmbassadorProject(project)) {
+              navigate(`/people/uft/${slug}`, { replace: true });
+              return;
+            }
             
             // Check if current project is in the fetched list
             const currentProjectInList = projects.some(p => p.slug === slug);
@@ -1583,7 +2000,7 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
     } else {
       setLoading(false);
     }
-  }, [slug, viewMode, debouncedPeopleSearch, debouncedProjectSearch, peopleSkillsFilter, peopleIndustriesFilter, peopleFilters.openToWork, projectSkillsFilter, projectSectorsFilter, selectedInitiative, initiatives]);
+  }, [slug, viewMode, debouncedPeopleSearch, debouncedProjectSearch, peopleSkillsFilter, peopleIndustriesFilter, peopleFilters.openToWork, projectSkillsFilter, projectSectorsFilter, selectedInitiative, selectedPeopleGroup, isUftPeopleDetail, initiatives]);
 
   // NOTE: Duplicate currentIndex update useEffect was removed - it caused race conditions
   // during rapid navigation. The main fetch useEffect above already handles currentIndex updates
@@ -1634,7 +2051,20 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
     if (currentIndex < 0 || layoutView !== 'detail') return;
     
     const prefetchAdjacent = async () => {
-      if (viewMode === 'people') {
+      if (viewMode === 'people' && isUftPeopleMode) {
+        if (currentIndex < ambassadorProjects.length - 1) {
+          const nextSlug = ambassadorProjects[currentIndex + 1]?.slug;
+          if (nextSlug) {
+            projectsAPI.getBySlug(nextSlug).catch(() => {});
+          }
+        }
+        if (currentIndex > 0) {
+          const prevSlug = ambassadorProjects[currentIndex - 1]?.slug;
+          if (prevSlug) {
+            projectsAPI.getBySlug(prevSlug).catch(() => {});
+          }
+        }
+      } else if (viewMode === 'people') {
         // Prefetch next person
         if (currentIndex < allProfiles.length - 1) {
           const nextSlug = allProfiles[currentIndex + 1]?.slug;
@@ -1670,12 +2100,18 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
     // Delay prefetch slightly to not interfere with current page load
     const timer = setTimeout(prefetchAdjacent, 300);
     return () => clearTimeout(timer);
-  }, [currentIndex, viewMode, allProfiles, allProjects, layoutView]);
+  }, [currentIndex, viewMode, allProfiles, allProjects, ambassadorProjects, layoutView, isUftPeopleMode]);
 
   // Navigation handlers
   const handlePrevious = () => {
     if (currentIndex > 0) {
-      if (viewMode === 'people') {
+      if (viewMode === 'people' && isUftPeopleMode) {
+        const prevProject = ambassadorProjects[currentIndex - 1];
+        if (prevProject) {
+          analytics.navigation('previous', project?.slug, prevProject.slug);
+          navigate(`/people/uft/${prevProject.slug}`);
+        }
+      } else if (viewMode === 'people') {
         const prevProfile = allProfiles[currentIndex - 1];
         if (prevProfile) {
         analytics.navigation('previous', person?.slug, prevProfile.slug);
@@ -1692,9 +2128,19 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
   };
 
   const handleNext = () => {
-    const maxLength = viewMode === 'people' ? allProfiles.length : allProjects.length;
+    const maxLength = viewMode === 'people' && isUftPeopleMode
+      ? ambassadorProjects.length
+      : viewMode === 'people'
+      ? allProfiles.length
+      : allProjects.length;
     if (currentIndex < maxLength - 1) {
-      if (viewMode === 'people') {
+      if (viewMode === 'people' && isUftPeopleMode) {
+        const nextProject = ambassadorProjects[currentIndex + 1];
+        if (nextProject) {
+          analytics.navigation('next', project?.slug, nextProject.slug);
+          navigate(`/people/uft/${nextProject.slug}`);
+        }
+      } else if (viewMode === 'people') {
         const nextProfile = allProfiles[currentIndex + 1];
         if (nextProfile) {
         analytics.navigation('next', person?.slug, nextProfile.slug);
@@ -1713,11 +2159,16 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
   const handleTabSwitch = (tab) => {
     // Always navigate to the new view (grid/list) when switching tabs
     // This ensures clicking "PROJECTS" shows the projects grid view
+    if (tab !== viewMode) {
+      setGridListLoading(true);
+      setPaginationPending(true);
+    }
     setFilterView(tab);
-    setViewMode(tab);
     setCurrentIndex(-1);
     setGridPage(0); // Reset grid page when switching between people and projects
     setMobileMenuOpen(false); // Close mobile menu when switching tabs
+    setPerson(null);
+    setProject(null);
     
     // Clear filters when switching tabs
     setPeopleFilters({ search: '', skills: [], industries: [], openToWork: false });
@@ -1725,6 +2176,7 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
     setProjectFilters({ search: '', skills: [], sectors: [] });
     setProjectSearchInput('');
     setSelectedInitiative(null);
+    setSelectedPeopleGroup(PEOPLE_GROUP_BUILDERS);
     setSearchCommitted(false);
     setSearchFocused(false);
     setSearchHovered(false);
@@ -1737,14 +2189,24 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
     }
   };
 
+  const beginFilterTransition = () => {
+    setGridPage(0);
+    setPaginationPending(true);
+    setLoadingMore(false);
+    setSlowLoadWarning(false);
+    if (layoutView === 'grid' || layoutView === 'list') {
+      setGridListLoading(true);
+    }
+  };
+
   // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'ArrowLeft') {
         // In grid view, navigate between pages
-        if (layoutView === 'grid') {
-          if (gridPage > 0) {
-            setGridPage(gridPage - 1);
+        if (layoutView === 'grid' && showGridPagination && !gridPagination.isLoading) {
+          if (gridPagination.canPrev) {
+            goToPrevGridPage();
           }
         } else {
           // In detail view, navigate between items
@@ -1752,12 +2214,9 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
         }
       } else if (e.key === 'ArrowRight') {
         // In grid view, navigate between pages
-        if (layoutView === 'grid') {
-          const maxPage = viewMode === 'people' 
-            ? Math.ceil(filteredProfiles.length / 8) - 1 
-            : Math.ceil(filteredProjects.length / 8) - 1;
-          if (gridPage < maxPage) {
-            setGridPage(gridPage + 1);
+        if (layoutView === 'grid' && showGridPagination && !gridPagination.isLoading) {
+          if (gridPagination.canNext) {
+            goToNextGridPage();
           }
         } else {
           // In detail view, navigate between items
@@ -1770,17 +2229,24 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [currentIndex, viewMode, filteredProfiles, allProjects, layoutView, gridPage]);
+  }, [currentIndex, viewMode, filteredPeopleCards, filteredProjects, allProjects, ambassadorProjects, layoutView, gridPage, showGridPagination, gridPagination, goToPrevGridPage, goToNextGridPage, handlePrevious, handleNext]);
 
   const canGoPrevious = currentIndex > 0;
   // Use allProfiles/allProjects directly - they are already filtered when filters are active (from API)
-  const currentLength = viewMode === 'people' ? allProfiles.length : allProjects.length;
+  const currentLength = viewMode === 'people' && isUftPeopleMode
+    ? ambassadorProjects.length
+    : viewMode === 'people'
+    ? allProfiles.length
+    : allProjects.length;
   // Next button should be active if we're not on the last item
   const canGoNext = currentIndex >= 0 && currentIndex < currentLength - 1;
 
   // Only show loading screen if we're actually loading and don't have data yet
   // This prevents full page refresh when transitioning from grid to detail
-  const isActuallyLoading = loading && !((viewMode === 'people' && person) || (viewMode === 'projects' && project));
+  const hasDetailContent = viewMode === 'people'
+    ? (isUftPeopleDetail ? project : person)
+    : project;
+  const isActuallyLoading = loading && !hasDetailContent;
   if (isActuallyLoading && slug) return <div className="min-h-screen" style={{backgroundColor: '#e3e3e3'}}></div>;
   // Only show error if we're done loading and viewMode has been set
   if (error && slug && !loading && viewMode) return <div className="flex items-center justify-center min-h-screen text-red-500" style={{backgroundColor: '#e3e3e3'}}>{error}</div>;
@@ -1895,6 +2361,7 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
               if (e.key === 'Enter') {
                 e.preventDefault();
                 // Commit the search
+                beginFilterTransition();
                 if (viewMode === 'people') {
                   setPeopleFilters({ ...peopleFilters, search: peopleSearchInput });
                 } else {
@@ -1981,6 +2448,7 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
                 e.preventDefault();
                 e.stopPropagation();
                 // Clear all search states and collapse the tray
+                beginFilterTransition();
                   if (viewMode === 'people') {
                   setPeopleSearchInput('');
                     setPeopleFilters({ ...peopleFilters, search: '' });
@@ -2078,109 +2546,24 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
           {/* Left side: Pagination controls - aligned with cards */}
           <div className="flex items-center gap-3" style={{marginLeft: 0, paddingLeft: 0}}>
             {/* Page indicator with navigation - left-aligned - Hide when initiative filter is active */}
-            {layoutView === 'grid' && (
-              <>
-                {viewMode === 'projects' && !isFilterUrl && !selectedInitiative && (
-                  <div className="flex items-center">
-                    <button
-                      onClick={() => setGridPage(Math.max(0, gridPage - 1))}
-                      onMouseEnter={() => prefetchPage(-1)}
-                      disabled={gridPage === 0 || Math.ceil(totalProjects / 8) <= 1}
-                      className="page-nav-button page-nav-button-left h-[40px] w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center"
-                      style={{
-                        color: (gridPage === 0 || Math.ceil(totalProjects / 8) <= 1) ? '#d1d5db' : '#4242ea',
-                        backgroundColor: '#ffffff',
-                        marginRight: '5px'
-                      }}
-                      aria-label="Previous page"
-                    >
-                      <ChevronLeft className="w-[30px] h-[30px]" strokeWidth={1.5} />
-                    </button>
-                    <div className="text-base text-gray-700 w-40 text-center bg-white rounded-md border-0 h-10 px-[15px] flex items-center justify-center">
-                      {gridListLoading ? (
-                        <>
-                          <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-300 border-t-[#4242ea]"></div>
-                          <span style={{marginLeft: '0.5em'}}>Loading...</span>
-                        </>
-                      ) : totalProjects === 0 ? (
-                        <>
-                          <span className="font-bold">0</span> <span style={{marginLeft: '0.25em'}}>Pages</span>
-                        </>
-                      ) : (
-                        <>
-                          <span className="font-bold">{String(gridPage + 1).padStart(2, '0')}</span><span style={{marginLeft: 'calc(0.125em + 1px)', marginRight: '0.125em'}}>/</span>{String(Math.max(1, Math.ceil(totalProjects / 8))).padStart(2, '0')} <span style={{marginLeft: '0.25em'}}>Pages</span>
-                        </>
-                      )}
-                    </div>
-                    <button
-                      onClick={() => setGridPage(Math.min(Math.ceil(totalProjects / 8) - 1, gridPage + 1))}
-                      onMouseEnter={() => prefetchPage(1)}
-                      disabled={gridPage >= Math.ceil(totalProjects / 8) - 1 || Math.ceil(totalProjects / 8) <= 1}
-                      className="page-nav-button h-[40px] w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center"
-                      style={{
-                        color: (gridPage >= Math.ceil(totalProjects / 8) - 1 || Math.ceil(totalProjects / 8) <= 1) ? '#d1d5db' : '#4242ea',
-                        backgroundColor: '#ffffff',
-                        marginLeft: '5px'
-                      }}
-                      aria-label="Next page"
-                    >
-                      <ChevronRight className="w-[30px] h-[30px]" strokeWidth={1.5} />
-                    </button>
-                  </div>
-                )}
-                {viewMode === 'people' && (
-                  <div className="flex items-center">
-                    <button
-                      onClick={() => setGridPage(Math.max(0, gridPage - 1))}
-                      onMouseEnter={() => prefetchPage(-1)}
-                      disabled={gridPage === 0 || Math.ceil(totalProfiles / 8) <= 1}
-                      className="page-nav-button page-nav-button-left h-[40px] w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center"
-                      style={{
-                        color: (gridPage === 0 || Math.ceil(totalProfiles / 8) <= 1) ? '#d1d5db' : '#4242ea',
-                        backgroundColor: '#ffffff',
-                        marginRight: '5px'
-                      }}
-                      aria-label="Previous page"
-                    >
-                      <ChevronLeft className="w-[30px] h-[30px]" strokeWidth={1.5} />
-                    </button>
-                    <div className="text-base text-gray-700 w-36 text-center bg-white rounded-md border-0 h-10 px-[15px] flex items-center justify-center">
-                      {gridListLoading ? (
-                        <>
-                          <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-300 border-t-[#4242ea]"></div>
-                          <span style={{marginLeft: '0.5em'}}>Loading...</span>
-                        </>
-                      ) : totalProfiles === 0 ? (
-                        <>
-                          <span className="font-bold">0</span> <span style={{marginLeft: '0.25em'}}>Pages</span>
-                        </>
-                      ) : (
-                        <>
-                          <span className="font-bold">{String(gridPage + 1).padStart(2, '0')}</span><span style={{marginLeft: 'calc(0.125em + 1px)', marginRight: '0.125em'}}>/</span>{String(Math.max(1, Math.ceil(totalProfiles / 8))).padStart(2, '0')} <span style={{marginLeft: '0.25em'}}>Pages</span>
-                        </>
-                      )}
-                    </div>
-                    <button
-                      onClick={() => setGridPage(Math.min(Math.ceil(totalProfiles / 8) - 1, gridPage + 1))}
-                      onMouseEnter={() => prefetchPage(1)}
-                      disabled={gridPage >= Math.ceil(totalProfiles / 8) - 1 || Math.ceil(totalProfiles / 8) <= 1}
-                      className="page-nav-button h-[40px] w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center"
-                      style={{
-                        color: (gridPage >= Math.ceil(totalProfiles / 8) - 1 || Math.ceil(totalProfiles / 8) <= 1) ? '#d1d5db' : '#4242ea',
-                        backgroundColor: '#ffffff',
-                        marginLeft: '5px'
-                      }}
-                      aria-label="Next page"
-                    >
-                      <ChevronRight className="w-[30px] h-[30px]" strokeWidth={1.5} />
-                    </button>
-                  </div>
-                )}
-              </>
+            {showGridPagination && (
+              <GridPaginationBar
+                isLoading={gridPagination.isLoading}
+                currentPage={gridPagination.currentPage}
+                totalPages={gridPagination.totalPages}
+                totalItems={gridPagination.totalItems}
+                canPrev={gridPagination.canPrev}
+                canNext={gridPagination.canNext}
+                onPrev={goToPrevGridPage}
+                onNext={goToNextGridPage}
+                onPrefetchPrev={() => prefetchPage(-1)}
+                onPrefetchNext={() => prefetchPage(1)}
+                widthClass={viewMode === 'people' ? 'w-36' : 'w-40'}
+              />
             )}
             {layoutView === 'list' && (
               <div className={`text-base text-gray-700 ${viewMode === 'people' ? 'w-36' : 'w-40'} text-center bg-white rounded-md border-0 h-10 px-[7.5px] flex items-center justify-center`}>
-                <span className="font-bold">{viewMode === 'people' ? filteredProfiles.length : filteredProjects.length}</span><span style={{marginLeft: '0.25em'}}>{viewMode === 'people' ? 'People' : 'Projects'}</span>
+                <span className="font-bold">{viewMode === 'people' ? filteredPeopleCards.length : filteredProjects.length}</span><span style={{marginLeft: '0.25em'}}>{viewMode === 'people' ? 'People' : 'Projects'}</span>
               </div>
             )}
             {layoutView === 'detail' && (
@@ -2316,6 +2699,7 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
                     if (e.key === 'Enter') {
                       e.preventDefault();
                       // Commit the search
+                      beginFilterTransition();
                       if (viewMode === 'people') {
                         setPeopleFilters({ ...peopleFilters, search: peopleSearchInput });
                       } else {
@@ -2393,6 +2777,7 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
                       e.preventDefault();
                       e.stopPropagation();
                       // Clear all search states and collapse the tray
+                      beginFilterTransition();
                       if (viewMode === 'people') {
                         setPeopleSearchInput('');
                         setPeopleFilters({ ...peopleFilters, search: '' });
@@ -2539,6 +2924,54 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
               {filterView === 'people' && (
                 <div className="space-y-4">
                   <div className="space-y-2">
+                    <h4 className="text-sm">People</h4>
+                    <div className="space-y-1">
+                      <button
+                        onClick={() => {
+                          if (selectedPeopleGroup !== PEOPLE_GROUP_BUILDERS) {
+                            setGridListLoading(true);
+                          }
+                          beginFilterTransition();
+                          setSelectedPeopleGroup(PEOPLE_GROUP_BUILDERS);
+                          setPeopleFilters({ search: peopleFilters.search, skills: [], industries: [], openToWork: false });
+                          navigate('/people');
+                          analytics.filterApplied('people_group', 'AI-Native Builders', 'people');
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${
+                          selectedPeopleGroup === PEOPLE_GROUP_BUILDERS
+                            ? 'bg-[#4242ea] text-white font-medium'
+                            : 'bg-white hover:bg-gray-100 text-gray-700'
+                        }`}
+                      >
+                        AI-Native Builders
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (selectedPeopleGroup !== PEOPLE_GROUP_UFT) {
+                            setGridListLoading(true);
+                          }
+                          beginFilterTransition();
+                          setSelectedPeopleGroup(PEOPLE_GROUP_UFT);
+                          setPeopleFilters({ search: peopleFilters.search, skills: [], industries: [], openToWork: false });
+                          navigate(`/people/filter/${PEOPLE_GROUP_UFT}`);
+                          analytics.filterApplied('people_group', 'UFT AI Ambassadors', 'people');
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${
+                          selectedPeopleGroup === PEOPLE_GROUP_UFT
+                            ? 'bg-[#4242ea] text-white font-medium'
+                            : 'bg-white hover:bg-gray-100 text-gray-700'
+                        }`}
+                      >
+                        UFT AI Ambassadors
+                      </button>
+                    </div>
+                  </div>
+
+                  {selectedPeopleGroup === PEOPLE_GROUP_BUILDERS && (
+                    <>
+                  <Separator className="bg-white" />
+
+                  <div className="space-y-2">
                     <h4 className="text-sm">Skills</h4>
                     <div className="space-y-2 max-h-48 overflow-y-auto">
                       {availablePeopleFilters.skills.length > 0 ? (
@@ -2552,6 +2985,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                             id={`skill-${skill}`}
                             checked={peopleFilters.skills.includes(skill)}
                             onCheckedChange={(checked) => {
+                              beginFilterTransition();
                               const newSkills = checked
                                 ? [...peopleFilters.skills, skill]
                                 : peopleFilters.skills.filter(s => s !== skill);
@@ -2592,6 +3026,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                             id={`industry-${industry}`}
                             checked={peopleFilters.industries.includes(industry)}
                             onCheckedChange={(checked) => {
+                              beginFilterTransition();
                               const newIndustries = checked
                                 ? [...peopleFilters.industries, industry]
                                 : peopleFilters.industries.filter(i => i !== industry);
@@ -2615,6 +3050,8 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                       )}
                     </div>
                   </div>
+                    </>
+                  )}
 
                   {/* TEMPORARILY HIDDEN - Additional Filters
                   <div className="space-y-2">
@@ -2663,14 +3100,15 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
               {filterView === 'projects' && (
                 <div className="space-y-4">
                   {/* Initiatives Section */}
-                  {initiatives.length > 0 && (
+                  {projectInitiatives.length > 0 && (
                     <div className="space-y-2">
                       <h4 className="text-sm">Initiatives</h4>
                       <div className="space-y-1">
-                        {initiatives.map(initiative => (
+                        {projectInitiatives.map(initiative => (
                           <button
                             key={initiative.slug}
                             onClick={() => {
+                              beginFilterTransition();
                               if (selectedInitiative === initiative.slug) {
                                 // Deselecting - navigate to base projects page
                                 setSelectedInitiative(null);
@@ -2711,6 +3149,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                             id={`proj-skill-${skill}`}
                             checked={projectFilters.skills.includes(skill)}
                             onCheckedChange={(checked) => {
+                              beginFilterTransition();
                               const newSkills = checked
                                 ? [...projectFilters.skills, skill]
                                 : projectFilters.skills.filter(s => s !== skill);
@@ -2747,6 +3186,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                             id={`proj-sector-${sector}`}
                             checked={projectFilters.sectors.includes(sector)}
                             onCheckedChange={(checked) => {
+                              beginFilterTransition();
                               const newSectors = checked
                                 ? [...projectFilters.sectors, sector]
                                 : projectFilters.sectors.filter(s => s !== sector);
@@ -2823,6 +3263,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                   <button
                     style={{marginTop: '1rem'}}
                     onClick={() => {
+                      beginFilterTransition();
                       setProjectFilters({ search: '', skills: [], sectors: [] });
                       setProjectSearchInput('');
                       setSelectedInitiative(null);
@@ -2870,6 +3311,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                           </div>
                           <button
                             onClick={() => {
+                              beginFilterTransition();
                               setSelectedInitiative(null);
                               navigate('/projects');
                             }}
@@ -2908,25 +3350,15 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                       }}
                     >
                       {/* In grid view, apply client-side filters */}
-                      {filteredProjects.map((proj, idx) => (
-                        proj.cohort === 'UFT AI Ambassadors' ? (
-    <AmbassadorCard
-      key={proj.slug}
-      project={proj}
-      onClick={() => {
-        setLayoutView('detail');
-        navigate(`/projects/${proj.slug}`);
-      }}
-    />
-  ) : (
-                        <MemoizedProjectCard
-                          key={proj.slug}
-                          proj={proj}
-                          onClick={() => {
-                            setLayoutView('detail');
-                            navigate(`/projects/${proj.slug}`);
-                          }}
-                        />
+                      {filteredProjects.map((proj) => (
+                          <MemoizedProjectCard
+                            key={proj.slug}
+                            proj={proj}
+                            onClick={() => {
+                              setLayoutView('detail');
+                              navigate(`/projects/${proj.slug}`);
+                            }}
+                          />
                       ))}
                     </div>
                   )}
@@ -2943,58 +3375,23 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                 </>
               )}
 
-            {/* Mobile Navigation - Bottom Fixed for Projects Grid - Hide when initiative filter is active */}
-            {!isFilterUrl && !selectedInitiative && (
+            {/* Mobile Navigation - Bottom Fixed for Projects Grid */}
+            {showGridPagination && (
             <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white z-50 px-4 py-3 flex items-center justify-center shadow-lg">
-              <button
-                onClick={() => setGridPage(Math.max(0, gridPage - 1))}
-                disabled={gridPage === 0 || Math.ceil(totalProjects / 8) <= 1}
-                      className="page-nav-button page-nav-button-left h-[40px] w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center"
-                      style={{
-                        color: (gridPage === 0 || Math.ceil(totalProjects / 8) <= 1) ? '#d1d5db' : '#4242ea',
-                        backgroundColor: '#ffffff',
-                        marginRight: '5px'
-                      }}
-                aria-label="Previous page"
-              >
-                <ChevronLeft className="w-[30px] h-[30px]" strokeWidth={1.5} />
-              </button>
-              
-              <div className="text-base text-gray-700 w-28 text-center bg-white rounded-md border-0 h-10 px-[15px] flex items-center justify-center">
-                {gridListLoading ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-300 border-t-[#4242ea]"></div>
-                    <span style={{marginLeft: '0.5em'}}>Loading...</span>
-                  </>
-                ) : gridListLoading ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-300 border-t-[#4242ea]"></div>
-                    <span style={{marginLeft: '0.5em'}}>Loading...</span>
-                  </>
-                ) : totalProjects === 0 ? (
-                  <>
-                    <span className="font-bold">0</span> <span style={{marginLeft: '0.25em'}}>Pages</span>
-                  </>
-                ) : (
-                  <>
-                    <span className="font-bold">{String(gridPage + 1).padStart(2, '0')}</span><span style={{marginLeft: 'calc(0.125em + 1px)', marginRight: '0.125em'}}>/</span>{String(Math.max(1, Math.ceil(totalProjects / 8))).padStart(2, '0')} <span style={{marginLeft: '0.25em'}}>Pages</span>
-                  </>
-                )}
-              </div>
-
-              <button
-                onClick={() => setGridPage(Math.min(Math.ceil(totalProjects / 8) - 1, gridPage + 1))}
-                disabled={gridPage >= Math.ceil(totalProjects / 8) - 1 || Math.ceil(totalProjects / 8) <= 1}
-                className="page-nav-button h-[40px] w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center"
-                style={{
-                  color: (gridPage >= Math.ceil(totalProjects / 8) - 1 || Math.ceil(totalProjects / 8) <= 1) ? '#d1d5db' : '#4242ea',
-                  backgroundColor: '#ffffff',
-                  marginLeft: '5px'
-                }}
-                aria-label="Next page"
-              >
-                <ChevronRight className="w-[30px] h-[30px]" strokeWidth={1.5} />
-              </button>
+            <GridPaginationBar
+                isLoading={gridPagination.isLoading}
+                currentPage={gridPagination.currentPage}
+                totalPages={gridPagination.totalPages}
+                totalItems={gridPagination.totalItems}
+                canPrev={gridPagination.canPrev}
+                canNext={gridPagination.canNext}
+                onPrev={goToPrevGridPage}
+                onNext={goToNextGridPage}
+                onPrefetchPrev={() => prefetchPage(-1)}
+                onPrefetchNext={() => prefetchPage(1)}
+                widthClass="w-28"
+                barClassName="justify-center"
+              />
             </div>
             )}
             </>
@@ -3003,6 +3400,47 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
           {/* People Grid View */}
           {layoutView === 'grid' && viewMode === 'people' && (
             <>
+              {isUftPeopleMode && (
+                <div
+                  className="mb-6 rounded-xl overflow-hidden"
+                  style={{
+                    background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)',
+                    animation: 'fadeIn 0.3s ease-in-out'
+                  }}
+                >
+                  <div className="p-6 md:p-8">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <h2
+                          className="text-white font-bold uppercase tracking-wide mb-3"
+                          style={{
+                            fontFamily: "'Galano Grotesque', sans-serif",
+                            fontSize: 'clamp(1.5rem, 3vw, 2rem)'
+                          }}
+                        >
+                          {uftInitiative?.name || 'UFT AI Ambassadors'}
+                        </h2>
+                        {uftInitiative?.description && (
+                          <p className="text-gray-300 text-base md:text-lg leading-relaxed max-w-full lg:max-w-3xl">
+                            {uftInitiative.description}
+                          </p>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => {
+                          beginFilterTransition();
+                          setSelectedPeopleGroup(PEOPLE_GROUP_BUILDERS);
+                          navigate('/people');
+                        }}
+                        className="ml-4 p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
+                        title="Clear people filter"
+                      >
+                        <X className="w-5 h-5 text-white" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
               {!gridListLoading && totalProfiles === 0 ? (
                 <div className="flex flex-col items-center justify-center" style={{minHeight: 'calc(100vh - 12rem)', gap: '1rem'}}>
                   <Frown className="text-[#4242ea] error-icon" style={{width: '3rem', height: '3rem'}} strokeWidth={1.5} stroke="#4242ea" />
@@ -3012,6 +3450,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                   <button
                     style={{marginTop: '1rem'}}
                     onClick={() => {
+                      beginFilterTransition();
                       setPeopleFilters({ search: '', skills: [], industries: [], openToWork: false });
                       setPeopleSearchInput('');
                       setSearchCommitted(false);
@@ -3055,16 +3494,29 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                     }}
                   >
                     {/* In grid view, apply client-side filters */}
-                    {filteredProfiles.map((prof, idx) => (
-                      <MemoizedProfileCard 
-                        key={prof.slug}
-                        prof={prof}
-                        onClick={() => {
-                          setLayoutView('detail');
-                          navigate(`/people/${prof.slug}`);
-                        }}
-                      />
-                    ))}
+                    {isUftPeopleMode ? (
+                      filteredAmbassadorPeople.map((proj) => (
+                        <AmbassadorCard
+                          key={proj.slug}
+                          project={proj}
+                          onClick={() => {
+                            setLayoutView('detail');
+                            navigate(`/people/uft/${proj.slug}`);
+                          }}
+                        />
+                      ))
+                    ) : (
+                      filteredProfiles.map((prof) => (
+                        <MemoizedProfileCard 
+                          key={prof.slug}
+                          prof={prof}
+                          onClick={() => {
+                            setLayoutView('detail');
+                            navigate(`/people/${prof.slug}`);
+                          }}
+                        />
+                      ))
+                    )}
                   </div>
                 )
               )}
@@ -3073,52 +3525,22 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
               )}
 
             {/* Mobile Navigation - Bottom Fixed for People Grid */}
-            {(
+            {showGridPagination && (
             <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white z-50 px-4 py-3 flex items-center justify-center shadow-lg">
-              <button
-                onClick={() => setGridPage(Math.max(0, gridPage - 1))}
-                disabled={gridPage === 0 || Math.ceil(totalProfiles / 8) <= 1}
-                      className="page-nav-button page-nav-button-left h-[40px] w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center"
-                      style={{
-                        color: (gridPage === 0 || Math.ceil(totalProfiles / 8) <= 1) ? '#d1d5db' : '#4242ea',
-                        backgroundColor: '#ffffff',
-                        marginRight: '5px'
-                      }}
-                aria-label="Previous page"
-              >
-                <ChevronLeft className="w-[30px] h-[30px]" strokeWidth={1.5} />
-              </button>
-              
-              <div className="text-base text-gray-700 w-28 text-center bg-white rounded-md border-0 h-10 px-[15px] flex items-center justify-center">
-                {gridListLoading ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-300 border-t-[#4242ea]"></div>
-                    <span style={{marginLeft: '0.5em'}}>Loading...</span>
-                  </>
-                ) : totalProfiles === 0 ? (
-                  <>
-                    <span className="font-bold">0</span> <span style={{marginLeft: '0.25em'}}>Pages</span>
-                  </>
-                ) : (
-                  <>
-                    <span className="font-bold">{String(gridPage + 1).padStart(2, '0')}</span><span style={{marginLeft: 'calc(0.125em + 1px)', marginRight: '0.125em'}}>/</span>{String(Math.max(1, Math.ceil(totalProfiles / 8))).padStart(2, '0')} <span style={{marginLeft: '0.25em'}}>Pages</span>
-                  </>
-                )}
-              </div>
-
-              <button
-                onClick={() => setGridPage(Math.min(Math.ceil(totalProfiles / 8) - 1, gridPage + 1))}
-                disabled={gridPage >= Math.ceil(totalProfiles / 8) - 1 || Math.ceil(totalProfiles / 8) <= 1}
-                className="page-nav-button h-[40px] w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center"
-                style={{
-                  color: (gridPage >= Math.ceil(totalProfiles / 8) - 1 || Math.ceil(totalProfiles / 8) <= 1) ? '#d1d5db' : '#4242ea',
-                  backgroundColor: '#ffffff',
-                  marginLeft: '5px'
-                }}
-                aria-label="Next page"
-              >
-                <ChevronRight className="w-[30px] h-[30px]" strokeWidth={1.5} />
-              </button>
+            <GridPaginationBar
+                isLoading={gridPagination.isLoading}
+                currentPage={gridPagination.currentPage}
+                totalPages={gridPagination.totalPages}
+                totalItems={gridPagination.totalItems}
+                canPrev={gridPagination.canPrev}
+                canNext={gridPagination.canNext}
+                onPrev={goToPrevGridPage}
+                onNext={goToNextGridPage}
+                onPrefetchPrev={() => prefetchPage(-1)}
+                onPrefetchNext={() => prefetchPage(1)}
+                widthClass="w-28"
+                barClassName="justify-center"
+              />
             </div>
             )}
             </>
@@ -3136,6 +3558,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                         <button
                     style={{marginTop: '1rem'}}
                           onClick={() => {
+                      beginFilterTransition();
                       setProjectFilters({ search: '', skills: [], sectors: [] });
                     }}
                     className="page-nav-button h-10 px-6 rounded-full border-[1.5px] border-[#4242ea] bg-[#e3e3e3] text-[#4242ea] transition-all"
@@ -3143,7 +3566,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                     <span className="relative z-10">Clear Search</span>
                   </button>
                 </div>
-              ) : !gridListLoading && viewMode === 'people' && filteredProfiles.length === 0 ? (
+              ) : !gridListLoading && viewMode === 'people' && filteredPeopleCards.length === 0 ? (
                 <div className="flex flex-col items-center justify-center" style={{minHeight: 'calc(100vh - 12rem)', gap: '1rem'}}>
                   <Frown className="text-[#4242ea] error-icon" style={{width: '3rem', height: '3rem'}} strokeWidth={1.5} stroke="#4242ea" />
                   <p className="text-[#4242ea] uppercase" style={{fontFamily: "'Galano Grotesque', sans-serif", fontSize: '1.5rem', fontWeight: 400}}>
@@ -3152,6 +3575,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                   <button
                     style={{marginTop: '1rem'}}
                     onClick={() => {
+                      beginFilterTransition();
                       setPeopleFilters({ search: '', skills: [], industries: [], openToWork: false });
                     }}
                     className="page-nav-button h-10 px-6 rounded-full border-[1.5px] border-[#4242ea] bg-[#e3e3e3] text-[#4242ea] transition-all"
@@ -3269,7 +3693,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                 )}
                 {viewMode === 'people' && (
                   <div>
-                    {filteredProfiles.length === 0 ? (
+                    {filteredPeopleCards.length === 0 ? (
                       <div className="flex flex-col items-center justify-center gap-4" style={{minHeight: 'calc(100vh - 12rem)'}}>
                         <p className="text-[#4242ea] uppercase" style={{fontFamily: "'Galano Grotesque', sans-serif", fontSize: '1.5rem', fontWeight: 400, display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
                           Sorry! Can't find anyone
@@ -3277,6 +3701,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                         </p>
                         <button
                           onClick={() => {
+                            beginFilterTransition();
                             setPeopleFilters({ ...peopleFilters, search: '' });
                             setPeopleSearchInput('');
                             setSearchCommitted(false);
@@ -3295,6 +3720,48 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                           Clear Search
                         </button>
                       </div>
+                    ) : isUftPeopleMode ? (
+                      filteredAmbassadorPeople.map((proj, index) => (
+                      <div key={proj.slug}>
+                        {index > 0 && <div className="border-t border-gray-200 my-0"></div>}
+                        <div
+                          onClick={() => {
+                            setLayoutView('detail');
+                            navigate(`/people/uft/${proj.slug}`);
+                          }}
+                          className="flex items-center gap-6 p-4 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
+                        >
+                          <div className="w-20 h-20 rounded-full overflow-hidden flex-shrink-0 bg-gradient-to-br from-[#4242ea] to-[#2525c4]">
+                            {proj.main_image_url ? (
+                              <img
+                                src={getImageUrl(proj.main_image_url)}
+                                alt={proj.short_description || proj.title}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-white font-bold text-xl">
+                                {(proj.short_description || proj.title)?.charAt(0)}
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0" style={{maxWidth: '650px'}}>
+                            <h3 className="font-bold text-lg uppercase" style={{fontFamily: "'Galano Grotesque', sans-serif"}}>
+                              {proj.short_description || proj.title}
+                            </h3>
+                            <p className="text-gray-600 mb-2" style={{fontSize: '14px'}}>
+                              {proj.title}
+                            </p>
+                            <div className="flex gap-2 flex-wrap">
+                              {proj.sectors && proj.sectors.slice(0, 2).map((sector, i) => (
+                                <span key={i} className="text-xs px-2 py-1 rounded-full bg-purple-600 text-white font-semibold uppercase">
+                                  {sector}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      ))
                     ) : (
                       filteredProfiles.map((prof, index) => (
                       <div key={prof.slug}>
@@ -3422,7 +3889,10 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
           )}
 
           {/* Show "No results" without Card wrapper, or show content in Card */}
-          {!loading && !gridListLoading && ((viewMode === 'people' && allProfiles.length === 0 && !person) || (viewMode === 'projects' && allProjects.length === 0 && !project)) ? (
+          {!loading && !gridListLoading && (
+            (viewMode === 'people' && (isUftPeopleDetail ? ambassadorProjects.length === 0 && !project : allProfiles.length === 0 && !person)) ||
+            (viewMode === 'projects' && allProjects.length === 0 && !project)
+          ) ? (
             <div className="flex flex-col items-center justify-center" style={{minHeight: 'calc(100vh - 12rem)', gap: '1rem'}}>
               <Frown className="text-[#4242ea] error-icon" style={{width: '3rem', height: '3rem'}} strokeWidth={1.5} stroke="#4242ea" />
               <p className="text-[#4242ea] uppercase" style={{fontFamily: "'Galano Grotesque', sans-serif", fontSize: '1.5rem', fontWeight: 400}}>
@@ -3474,7 +3944,11 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
           }}>
             <CardContent className="p-4 md:p-[30px]">
               {/* Render Person or Project based on viewMode */}
-              {viewMode === 'people' && person && (
+              {viewMode === 'people' && isUftPeopleDetail && project && (
+                <AmbassadorDetailView project={project} />
+              )}
+
+              {viewMode === 'people' && !isUftPeopleDetail && person && (
               <>
               {/* Header with Photo and Name */}
               <div className="flex flex-col md:flex-row gap-6 mb-6 items-start">
@@ -3742,13 +4216,8 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
               </>
               )}
 
-             {/* Project View — Ambassador */}
-              {viewMode === 'projects' && project && project.cohort === 'UFT AI Ambassadors' && (
-                <AmbassadorDetailView project={project} />
-              )}
-
-              {/* Project View — Standard */}
-              {viewMode === 'projects' && project && project.cohort !== 'UFT AI Ambassadors' && (
+              {/* Project View — Standard (ambassadors redirect to /people/uft/:slug) */}
+              {viewMode === 'projects' && project && (
               <>
               <div className="mb-6">
                 {/* Project Info */}

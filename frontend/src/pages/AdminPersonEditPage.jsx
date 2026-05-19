@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import imageCompression from 'browser-image-compression';
 import { profilesAPI, taxonomyAPI, getImageUrl } from '../utils/api';
@@ -13,22 +13,29 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Save, ArrowLeft, Plus, X, Eye, Edit3, Linkedin, Globe } from 'lucide-react';
+import { Save, ArrowLeft, Plus, X, Eye, Edit3, Linkedin, Globe, Database } from 'lucide-react';
 
 function AdminPersonEditPage() {
   const { slug } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const isNew = slug === 'new';
+
+  const prefilledUserId = searchParams.get('userId');
+  const prefilledFirstName = searchParams.get('firstName');
+  const prefilledLastName = searchParams.get('lastName');
   
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editMode, setEditMode] = useState('form'); // 'form' or 'wysiwyg'
+  const [photoPreviewFailed, setPhotoPreviewFailed] = useState(false);
   
   // Taxonomy data
   const [availableSkills, setAvailableSkills] = useState([]);
   const [availableIndustries, setAvailableIndustries] = useState([]);
   
   const [formData, setFormData] = useState({
+    userId: null,
     name: '',
     title: '',
     bio: '',
@@ -51,12 +58,46 @@ function AdminPersonEditPage() {
   const [industryInput, setIndustryInput] = useState('');
   const [highlightInput, setHighlightInput] = useState('');
 
+  const generateSlug = (name) =>
+    name.toLowerCase().replace(/[^a-z0-9\s-]/g, '').trim()
+      .replace(/\s+/g, '-').replace(/-+/g, '-');
+
   useEffect(() => {
     fetchTaxonomy();
     if (!isNew) {
       fetchPerson();
+    } else if (prefilledUserId) {
+      const fullName = `${prefilledFirstName} ${prefilledLastName}`.trim();
+      setFormData(prev => ({
+        ...prev,
+        userId: parseInt(prefilledUserId, 10),
+        name: fullName,
+        slug: generateSlug(fullName)
+      }));
     }
   }, [slug, isNew]);
+
+  useEffect(() => {
+    const url = formData.photo_url;
+    if (!url || url.startsWith('data:image')) {
+      setPhotoPreviewFailed(false);
+      return;
+    }
+
+    let cancelled = false;
+    const probe = new Image();
+    probe.onload = () => {
+      if (!cancelled) setPhotoPreviewFailed(false);
+    };
+    probe.onerror = () => {
+      if (!cancelled) setPhotoPreviewFailed(true);
+    };
+    probe.src = getImageUrl(url);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [formData.photo_url]);
 
   const fetchTaxonomy = async () => {
     try {
@@ -77,6 +118,7 @@ function AdminPersonEditPage() {
       const response = await profilesAPI.getBySlug(slug);
       const person = response.data;
       
+      setPhotoPreviewFailed(false);
       setFormData({
         name: person.name || '',
         title: person.title || '',
@@ -151,6 +193,7 @@ function AdminPersonEditPage() {
 
       // Convert compressed file to base64
       const base64 = await fileToBase64(compressedFile);
+      setPhotoPreviewFailed(false);
       setFormData(prev => ({ ...prev, photo_url: base64 }));
     } catch (error) {
       console.error('Error compressing image:', error);
@@ -214,11 +257,16 @@ function AdminPersonEditPage() {
         }
       } else {
         const response = await profilesAPI.update(slug, formData);
+        const warning = response?.warning || '';
+        const photoStillMissing = warning.toLowerCase().includes('photo');
         
-        // Check if there's a warning about name update
-        if (response?.warning) {
-          toast.warning('Profile updated with limitations', {
-            description: response.warning
+        if (photoStillMissing) {
+          toast.warning('Saved, but photo still needs upload', {
+            description: warning
+          });
+        } else if (warning) {
+          toast.success('Person updated successfully!', {
+            description: warning
           });
         } else if (slugChanged) {
           toast.success('Person updated successfully!', {
@@ -228,6 +276,13 @@ function AdminPersonEditPage() {
           toast.success('Person updated successfully!', {
             description: `Changes to ${formData.name} have been saved.`
           });
+        }
+
+        apiCache.clear();
+
+        if (photoStillMissing) {
+          setSaving(false);
+          return;
         }
       }
       
@@ -364,6 +419,13 @@ function AdminPersonEditPage() {
             </div>
           </div>
         </div>
+
+        {isNew && formData.userId && (
+          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800 flex items-center gap-2">
+            <Database className="w-4 h-4 shrink-0" />
+            Creating profile for an existing database user — name and slug are pre-filled.
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {editMode === 'form' ? (
@@ -768,6 +830,11 @@ function AdminPersonEditPage() {
             <>
               <Card className="rounded-xl border-2 border-gray-200 shadow-sm">
                 <CardContent className="p-8">
+                  {photoPreviewFailed && (
+                    <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                      The saved photo file is missing on the server. Click the photo below, choose <strong>Upload New Photo</strong>, then save again.
+                    </div>
+                  )}
                   {/* Header with Photo and Name */}
                   <div className="flex items-start gap-6 mb-6">
                     {/* Profile Photo Card */}
@@ -783,6 +850,7 @@ function AdminPersonEditPage() {
                               src={getImageUrl(formData.photo_url)} 
                               alt={formData.name}
                               className="w-full h-full object-cover"
+                              onError={() => setPhotoPreviewFailed(true)}
                             />
                             <div className="absolute inset-0 bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-3 p-4">
                               <Button
