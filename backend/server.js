@@ -123,6 +123,7 @@ const aiRouter = require('./routes/ai');
 const taxonomyRouter = require('./routes/taxonomy');
 const initiativesRouter = require('./routes/initiatives');
 const externalContributorsRouter = require('./routes/externalContributors');
+const imageProxyRouter = require('./routes/imageProxy');
 const contactRouter = require('./routes/contact');
 
 // Mount routes
@@ -208,6 +209,7 @@ app.use('/api/ai', aiRouter);
 app.use('/api/taxonomy', taxonomyRouter);
 app.use('/api/initiatives', initiativesRouter);
 app.use('/api/external-contributors', externalContributorsRouter);
+app.use('/api/image-proxy', imageProxyRouter);
 app.use('/api/contact', contactRouter);
 
 // =====================================================

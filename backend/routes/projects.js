@@ -17,6 +17,7 @@ function getCacheKey(filters) {
     skills: (filters.skills || []).sort().join(','),
     sectors: (filters.sectors || []).sort().join(','),
     cohort: filters.cohort || '',
+    excludeAmbassadors: filters.excludeAmbassadors || false,
     hasDemoVideo: filters.hasDemoVideo,
     status: filters.status || 'active',
     limit: filters.limit || 50,
@@ -75,6 +76,7 @@ router.get('/', async (req, res) => {
       cohort, 
       hasDemoVideo, 
       status,
+      excludeAmbassadors,
       limit, 
       offset, 
       page 
@@ -89,6 +91,7 @@ router.get('/', async (req, res) => {
       skills: skills ? (Array.isArray(skills) ? skills : skills.split(',')) : undefined,
       sectors: sectors ? (Array.isArray(sectors) ? sectors : sectors.split(',')) : undefined,
       cohort,
+      excludeAmbassadors: excludeAmbassadors === 'true' || excludeAmbassadors === true,
       hasDemoVideo: hasDemoVideo === 'true' ? true : hasDemoVideo === 'false' ? false : undefined,
       status: status || 'active',
       limit: parseInt(limit) || 50,

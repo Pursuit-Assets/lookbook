@@ -17,6 +17,7 @@ const getAllProjects = async (filters = {}) => {
     status = 'active',
     limit = 50,
     offset = 0,
+    excludeAmbassadors = false,
     includeParticipants = false // New flag to optionally include participants
   } = filters;
   
@@ -100,6 +101,16 @@ const getAllProjects = async (filters = {}) => {
       params.push(cohort);
       paramCount++;
     }
+  }
+
+  if (excludeAmbassadors) {
+    whereConditions.push(`(
+      p.cohort IS DISTINCT FROM 'UFT AI Ambassadors'
+      AND (
+        p.summary IS NULL
+        OR p.summary NOT LIKE '{%"ambassador_name"%'
+      )
+    )`);
   }
   
   // Has demo video filter

@@ -42,6 +42,8 @@ function App() {
             <Routes>
               <Route path="/" element={<HomePage />} />
               <Route path="/people" element={<PersonDetailPage />} />
+              <Route path="/people/filter/:filterSlug" element={<PersonDetailPage />} />
+              <Route path="/people/uft/:slug" element={<PersonDetailPage />} />
               <Route path="/people/:slug" element={<PersonDetailPage />} />
               <Route path="/projects" element={<PersonDetailPage />} />
               <Route path="/projects/filter/:filterSlug" element={<PersonDetailPage />} />
