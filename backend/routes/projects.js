@@ -40,6 +40,27 @@ function setCachedProjects(cacheKey, data) {
   });
 }
 
+async function replaceExternalContributors(client, projectId, externalContributors = []) {
+  await client.query('DELETE FROM lookbook_project_external_contributors WHERE project_id = $1', [projectId]);
+
+  for (let i = 0; i < externalContributors.length; i++) {
+    const contributor = externalContributors[i];
+    if (!contributor) continue;
+
+    const contributorId = typeof contributor === 'number' ? contributor :
+      (contributor.external_contributor_id || contributor.externalContributorId || contributor.id);
+    const role = typeof contributor === 'object' && contributor !== null ? (contributor.role || '') : '';
+
+    if (contributorId) {
+      await client.query(`
+        INSERT INTO lookbook_project_external_contributors (
+          project_id, external_contributor_id, role, display_order
+        ) VALUES ($1, $2, $3, $4)
+      `, [projectId, contributorId, role, i]);
+    }
+  }
+}
+
 // =====================================================
 // GET /api/projects
 // Get all projects with optional filtering
@@ -254,7 +275,7 @@ router.post('/', async (req, res) => {
     projectData.slug = slug;
 
     // Separate participants from other project data
-    const { participants, ...projectFields } = projectData;
+    const { participants, externalContributors, ...projectFields } = projectData;
 
     const imageFields = ['main_image_url', 'card_background_url', 'partner_logo_url', 'icon_url'];
     for (const field of imageFields) {
@@ -282,6 +303,15 @@ router.post('/', async (req, res) => {
             VALUES ($1, $2, $3, $4)
           `, [newProject.id, profileId, role, i]);
         }
+      }
+    }
+
+    if (externalContributors && Array.isArray(externalContributors) && externalContributors.length > 0) {
+      const client = await pool.connect();
+      try {
+        await replaceExternalContributors(client, newProject.id, externalContributors);
+      } finally {
+        client.release();
       }
     }
 
@@ -340,7 +370,7 @@ router.put('/:slug', async (req, res) => {
     const updates = req.body;
     
     // Separate participants from other updates
-    const { participants, ...projectUpdates} = updates;
+    const { participants, externalContributors, ...projectUpdates} = updates;
     
     // Map camelCase to snake_case for backwards compatibility
     if (projectUpdates.shortDescription !== undefined) {
@@ -420,6 +450,10 @@ router.put('/:slug', async (req, res) => {
             `, [updatedProject.id, profileId, role, i]);
           }
         }
+      }
+
+      if (externalContributors && Array.isArray(externalContributors)) {
+        await replaceExternalContributors(client, updatedProject.id, externalContributors);
       }
 
       await client.query('COMMIT');

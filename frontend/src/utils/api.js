@@ -271,11 +271,32 @@ export const taxonomyAPI = {
 // =====================================================
 
 export const initiativesAPI = {
-  getAll: (includeInactive = false) => api.get('/initiatives', { params: { includeInactive } }),
+  getAll: (includeInactive = false, options = {}) => {
+    const fresh = includeInactive || options.fresh;
+    const params = fresh
+      ? { includeInactive, _ts: Date.now() }
+      : { includeInactive };
+
+    return api.get('/initiatives', {
+      params,
+      headers: fresh ? { 'Cache-Control': 'no-cache' } : undefined,
+    });
+  },
   getBySlug: (slug) => api.get(`/initiatives/${slug}`),
   create: (data) => api.post('/initiatives', data),
   update: (id, data) => api.put(`/initiatives/${id}`, data),
   delete: (id) => api.delete(`/initiatives/${id}`),
+};
+
+// =====================================================
+// EXTERNAL CONTRIBUTOR ENDPOINTS
+// =====================================================
+
+export const externalContributorsAPI = {
+  getAll: () => api.get('/external-contributors'),
+  create: (data) => api.post('/external-contributors', data),
+  update: (id, data) => api.put(`/external-contributors/${id}`, data),
+  delete: (id) => api.delete(`/external-contributors/${id}`),
 };
 
 export default api;

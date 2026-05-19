@@ -34,7 +34,7 @@ function AdminInitiativesPage() {
 
   const fetchAllProjects = async () => {
     try {
-      const response = await projectsAPI.getAll();
+      const response = await projectsAPI.getAll({ limit: 1000 });
       setAllProjects(response.data || []);
     } catch (error) {
       console.error('Error fetching projects:', error);
@@ -177,7 +177,7 @@ function AdminInitiativesPage() {
         <div className="mb-6 flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Initiatives</h1>
-            <p className="text-gray-500 mt-1">Manage project groupings and cohorts</p>
+            <p className="text-gray-500 mt-1">Manage project groupings, cohorts, and partner initiatives</p>
           </div>
           {!showAddForm && !editingInitiative && (
             <Button 
@@ -218,13 +218,13 @@ function AdminInitiativesPage() {
                     Cohort Value *
                   </label>
                   <Input
-                    placeholder="e.g., SMB Winter 2025 (must match project cohort field)"
+                    placeholder="e.g., SMB Winter 2025 or UFT AI Ambassadors"
                     value={formData.cohortValue}
                     onChange={(e) => setFormData({ ...formData, cohortValue: e.target.value })}
                     className="bg-white text-gray-900 border-gray-300"
                   />
                   <p className="text-xs text-gray-500 mt-1">
-                    This value must match the "cohort" field on projects you want to include in this initiative.
+                    This value must match the project initiative/cohort field for projects you want to include.
                   </p>
                 </div>
                 
@@ -434,9 +434,10 @@ function AdminInitiativesPage() {
         <div className="mt-8 p-4 bg-blue-50 rounded-lg">
           <h4 className="font-semibold text-blue-900 mb-2">How Initiatives Work</h4>
           <ul className="text-sm text-blue-800 space-y-1">
-            <li>• Initiatives group projects by their "cohort" field value</li>
-            <li>• When users click an initiative in the sidebar, they see only projects with matching cohort</li>
-            <li>• To add a project to an initiative, edit the project and set its cohort to match the initiative's cohort value</li>
+            <li>• Initiatives group projects by their initiative/cohort field value</li>
+            <li>• Initiatives can represent Builder cohorts, partner programs, school groups, or other project collections</li>
+            <li>• When users click an initiative in the sidebar, they see only projects with a matching value</li>
+            <li>• To add a project to an initiative, edit the project and set its initiative field to match the initiative's value</li>
             <li>• The description you set here will appear in the header when users filter by this initiative</li>
           </ul>
         </div>
