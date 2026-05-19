@@ -28,6 +28,15 @@ function setCachedInitiatives(cacheKey, data) {
   });
 }
 
+function setInitiativesCacheHeaders(res, includeInactive) {
+  if (includeInactive) {
+    res.set('Cache-Control', 'no-store');
+    return;
+  }
+
+  res.set('Cache-Control', 'public, max-age=600');
+}
+
 // Helper to generate slug from name
 const generateSlug = (name) => {
   return name
@@ -43,13 +52,14 @@ const generateSlug = (name) => {
 router.get('/', async (req, res) => {
   try {
     const includeInactive = req.query.includeInactive === 'true';
+    const shouldUseCache = !includeInactive;
     
     // Check cache first
     const cacheKey = getCacheKey(includeInactive);
-    const cachedResult = getCachedInitiatives(cacheKey);
+    const cachedResult = shouldUseCache ? getCachedInitiatives(cacheKey) : null;
     if (cachedResult) {
       console.log(`📦 Cache HIT for initiatives query`);
-      res.set('Cache-Control', 'public, max-age=600');
+      setInitiativesCacheHeaders(res, includeInactive);
       return res.json({
         success: true,
         data: cachedResult
@@ -67,11 +77,13 @@ router.get('/', async (req, res) => {
     const queryTime = Date.now() - startTime;
     
     // Cache the result
-    setCachedInitiatives(cacheKey, initiatives);
+    if (shouldUseCache) {
+      setCachedInitiatives(cacheKey, initiatives);
+    }
     
-    console.log(`✅ Fetched ${initiatives.length} initiatives in ${queryTime}ms (cached for next request)`);
+    console.log(`✅ Fetched ${initiatives.length} initiatives in ${queryTime}ms${shouldUseCache ? ' (cached for next request)' : ''}`);
 
-    res.set('Cache-Control', 'public, max-age=600');
+    setInitiativesCacheHeaders(res, includeInactive);
     res.json({
       success: true,
       data: initiatives

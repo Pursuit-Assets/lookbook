@@ -66,7 +66,7 @@ function AdminProjectsPage() {
 
   const fetchInitiatives = async () => {
     try {
-      const response = await initiativesAPI.getAll();
+      const response = await initiativesAPI.getAll(false, { fresh: true });
       if (response.success) {
         setInitiatives(response.data || []);
       }

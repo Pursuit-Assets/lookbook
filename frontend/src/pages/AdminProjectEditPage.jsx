@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import imageCompression from 'browser-image-compression';
-import { projectsAPI, profilesAPI, initiativesAPI, getImageUrl } from '../utils/api';
+import { projectsAPI, profilesAPI, initiativesAPI, externalContributorsAPI, getImageUrl } from '../utils/api';
 import AdminLayout from '../components/AdminLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,8 +20,16 @@ function AdminProjectEditPage() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [allPeople, setAllPeople] = useState([]);
+  const [externalContributors, setExternalContributors] = useState([]);
   const [initiatives, setInitiatives] = useState([]);
   const [participantSearch, setParticipantSearch] = useState('');
+  const [externalContributorSearch, setExternalContributorSearch] = useState('');
+  const [newExternalContributor, setNewExternalContributor] = useState({
+    name: '',
+    title: '',
+    organization: '',
+    photo_url: ''
+  });
   const [formData, setFormData] = useState({
     title: '',
     summary: '',
@@ -37,6 +45,7 @@ function AdminProjectEditPage() {
     skills: [],
     sectors: [],
     participants: [], // Array of profile_ids
+    externalContributors: [], // Array of external contributor ids/roles
     slug: '',
     has_partner: false,
     partner_name: '',
@@ -317,6 +326,7 @@ function AdminProjectEditPage() {
 
   useEffect(() => {
     fetchAllPeople();
+    fetchExternalContributors();
     fetchInitiatives();
     if (!isNew) {
       fetchProject();
@@ -332,9 +342,18 @@ function AdminProjectEditPage() {
     }
   };
 
+  const fetchExternalContributors = async () => {
+    try {
+      const response = await externalContributorsAPI.getAll();
+      setExternalContributors(response.data || []);
+    } catch (error) {
+      console.error('Error fetching external contributors:', error);
+    }
+  };
+
   const fetchInitiatives = async () => {
     try {
-      const response = await initiativesAPI.getAll();
+      const response = await initiativesAPI.getAll(false, { fresh: true });
       setInitiatives(response.data || []);
     } catch (error) {
       console.error('Error fetching initiatives:', error);
@@ -347,8 +366,20 @@ function AdminProjectEditPage() {
       const response = await projectsAPI.getBySlug(slug);
       const project = response.data;
       
-      // Extract participant profile_ids from participants array
-      const participantIds = project.participants ? project.participants.map(p => p.profile_id) : [];
+      // Split profile participants from external contributors.
+      const participantIds = project.participants
+        ? project.participants.filter(p => p.type !== 'external').map(p => p.profile_id).filter(Boolean)
+        : [];
+      const projectExternalContributors = project.participants
+        ? project.participants
+          .filter(p => p.type === 'external')
+          .map(p => ({
+            id: p.external_contributor_id,
+            external_contributor_id: p.external_contributor_id,
+            role: p.role || ''
+          }))
+          .filter(p => p.external_contributor_id)
+        : [];
 
       
       // Normalize the video URL if it exists
@@ -369,6 +400,7 @@ function AdminProjectEditPage() {
         skills: project.skills || [],
         sectors: project.sectors || [],
         participants: participantIds,
+        externalContributors: projectExternalContributors,
         slug: project.slug || '',
         has_partner: project.has_partner || false,
         partner_name: project.partner_name || '',
@@ -445,6 +477,66 @@ function AdminProjectEditPage() {
     setFormData({ ...formData, participants: formData.participants.filter(id => id !== profileId) });
   };
 
+  const addExternalContributor = (contributorId) => {
+    const exists = formData.externalContributors.some((contributor) => (
+      (contributor.external_contributor_id || contributor.id) === contributorId
+    ));
+
+    if (!exists) {
+      setFormData({
+        ...formData,
+        externalContributors: [
+          ...formData.externalContributors,
+          { external_contributor_id: contributorId, role: '' }
+        ]
+      });
+    }
+    setExternalContributorSearch('');
+  };
+
+  const removeExternalContributor = (contributorId) => {
+    setFormData({
+      ...formData,
+      externalContributors: formData.externalContributors.filter((contributor) => (
+        (contributor.external_contributor_id || contributor.id) !== contributorId
+      ))
+    });
+  };
+
+  const updateExternalContributorRole = (contributorId, role) => {
+    setFormData({
+      ...formData,
+      externalContributors: formData.externalContributors.map((contributor) => {
+        const currentId = contributor.external_contributor_id || contributor.id;
+        return currentId === contributorId ? { ...contributor, role } : contributor;
+      })
+    });
+  };
+
+  const createExternalContributor = async () => {
+    if (!newExternalContributor.name.trim()) {
+      toast.error('External contributor name is required');
+      return;
+    }
+
+    try {
+      const response = await externalContributorsAPI.create({
+        name: newExternalContributor.name.trim(),
+        title: newExternalContributor.title.trim(),
+        organization: newExternalContributor.organization.trim(),
+        photo_url: newExternalContributor.photo_url.trim()
+      });
+      const contributor = response.data;
+      setExternalContributors([...externalContributors, contributor].sort((a, b) => a.name.localeCompare(b.name)));
+      addExternalContributor(contributor.id);
+      setNewExternalContributor({ name: '', title: '', organization: '', photo_url: '' });
+      toast.success('External contributor added');
+    } catch (error) {
+      console.error('Error creating external contributor:', error);
+      toast.error(error.response?.data?.error || 'Failed to create external contributor');
+    }
+  };
+
   // Filter people based on search
   const filteredPeople = allPeople.filter(person => {
     if (!participantSearch) return false;
@@ -452,6 +544,18 @@ function AdminProjectEditPage() {
     const name = (person.name || `${person.user?.first_name || ''} ${person.user?.last_name || ''}`).toLowerCase();
     const title = (person.title || '').toLowerCase();
     return (name.includes(searchLower) || title.includes(searchLower)) && !formData.participants.includes(person.profile_id);
+  });
+
+  const filteredExternalContributors = externalContributors.filter((contributor) => {
+    if (!externalContributorSearch) return false;
+    const searchLower = externalContributorSearch.toLowerCase();
+    const selectedIds = formData.externalContributors.map((item) => item.external_contributor_id || item.id);
+    return (
+      !selectedIds.includes(contributor.id) &&
+      [contributor.name, contributor.title, contributor.organization]
+        .filter(Boolean)
+        .some((value) => value.toLowerCase().includes(searchLower))
+    );
   });
 
   if (loading) {
@@ -705,7 +809,7 @@ function AdminProjectEditPage() {
                   ))}
                 </select>
                 <p className="text-xs text-gray-500 mt-1">
-                  Assigning to an initiative will group this project with others in that cohort
+                  Assigning to an initiative will group this project with others in that project collection.
                 </p>
               </div>
               
@@ -1327,11 +1431,117 @@ function AdminProjectEditPage() {
                     </div>
                   );
                 })}
-                {formData.participants.length === 0 && (
+                {formData.participants.length === 0 && formData.externalContributors.length === 0 && (
                   <p className="text-sm text-gray-500 text-center py-4">
                     No team members added yet. Search and add people above.
                   </p>
                 )}
+              </div>
+
+              <div className="border-t border-gray-200 pt-4 space-y-4">
+                <div>
+                  <Label>External contributors</Label>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Use this for teachers, ambassadors, or partners who should appear on project teams without being added to People.
+                  </p>
+                </div>
+
+                <div className="relative">
+                  <Input
+                    value={externalContributorSearch}
+                    onChange={(e) => setExternalContributorSearch(e.target.value)}
+                    placeholder="Search external contributors by name..."
+                  />
+                  {externalContributorSearch && filteredExternalContributors.length > 0 && (
+                    <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                      {filteredExternalContributors.slice(0, 10).map((contributor) => (
+                        <button
+                          key={contributor.id}
+                          type="button"
+                          onClick={() => addExternalContributor(contributor.id)}
+                          className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-3"
+                        >
+                          {contributor.photo_url && (
+                            <img
+                              src={getImageUrl(contributor.photo_url)}
+                              alt=""
+                              className="w-8 h-8 rounded-full object-cover"
+                            />
+                          )}
+                          <div>
+                            <div className="font-medium">{contributor.name}</div>
+                            <div className="text-xs text-gray-500">
+                              {[contributor.title, contributor.organization].filter(Boolean).join(' at ')}
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-2 p-3 bg-gray-50 rounded-lg">
+                  <Input
+                    value={newExternalContributor.name}
+                    onChange={(e) => setNewExternalContributor({ ...newExternalContributor, name: e.target.value })}
+                    placeholder="Name"
+                  />
+                  <Input
+                    value={newExternalContributor.title}
+                    onChange={(e) => setNewExternalContributor({ ...newExternalContributor, title: e.target.value })}
+                    placeholder="Title"
+                  />
+                  <Input
+                    value={newExternalContributor.organization}
+                    onChange={(e) => setNewExternalContributor({ ...newExternalContributor, organization: e.target.value })}
+                    placeholder="Organization"
+                  />
+                  <Button type="button" variant="outline" onClick={createExternalContributor}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add
+                  </Button>
+                </div>
+
+                <div className="space-y-2">
+                  {formData.externalContributors.map((selectedContributor) => {
+                    const contributorId = selectedContributor.external_contributor_id || selectedContributor.id;
+                    const contributor = externalContributors.find(item => item.id === contributorId);
+                    if (!contributor) return null;
+
+                    return (
+                      <div key={contributorId} className="flex items-center justify-between gap-3 p-3 bg-gray-50 rounded-lg">
+                        <div className="flex items-center gap-3 flex-1">
+                          {contributor.photo_url && (
+                            <img
+                              src={getImageUrl(contributor.photo_url)}
+                              alt=""
+                              className="w-10 h-10 rounded-full object-cover"
+                            />
+                          )}
+                          <div className="min-w-0">
+                            <div className="font-medium">{contributor.name}</div>
+                            <div className="text-sm text-gray-500">
+                              {[contributor.title, contributor.organization].filter(Boolean).join(' at ')}
+                            </div>
+                          </div>
+                        </div>
+                        <Input
+                          value={selectedContributor.role || ''}
+                          onChange={(e) => updateExternalContributorRole(contributorId, e.target.value)}
+                          placeholder="Role"
+                          className="w-36"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeExternalContributor(contributorId)}
+                          className="text-red-500 hover:text-red-700"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </CardContent>
           </Card>

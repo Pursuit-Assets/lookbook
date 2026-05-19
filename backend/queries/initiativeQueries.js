@@ -31,7 +31,10 @@ const getAllInitiatives = async (includeInactive = false) => {
   }
   
   query += ` GROUP BY i.id, i.slug, i.name, i.description, i.cohort_value, i.display_order, i.is_active, i.created_at, i.updated_at
-    ORDER BY i.display_order ASC, i.created_at DESC`;
+    ORDER BY
+      CASE WHEN i.display_order > 0 THEN 0 ELSE 1 END,
+      i.display_order ASC,
+      i.created_at DESC`;
   
   const result = await pool.query(query);
   return result.rows;

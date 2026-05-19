@@ -23,18 +23,42 @@ const getAllProjects = async (filters = {}) => {
   // Build participants subquery only if requested
   const participantsQuery = includeParticipants ? `
     (
-      SELECT json_agg(
-        json_build_object(
-          'slug', prof.slug,
-          'name', COALESCE(u.first_name || ' ' || u.last_name, initcap(replace(prof.slug, '-', ' '))),
-          'photoUrl', prof.photo_url,
-          'role', pp.role
-        ) ORDER BY pp.display_order
-      )
-      FROM lookbook_project_participants pp
-      JOIN lookbook_profiles prof ON pp.profile_id = prof.id
-      LEFT JOIN users u ON prof.user_id = u.user_id
-      WHERE pp.project_id = p.id
+      SELECT json_agg(participant ORDER BY display_order, sort_name)
+      FROM (
+        SELECT
+          pp.display_order,
+          COALESCE(u.first_name || ' ' || u.last_name, initcap(replace(prof.slug, '-', ' '))) as sort_name,
+          json_build_object(
+            'type', 'profile',
+            'profile_id', prof.id,
+            'slug', prof.slug,
+            'name', COALESCE(u.first_name || ' ' || u.last_name, initcap(replace(prof.slug, '-', ' '))),
+            'photoUrl', prof.photo_url,
+            'role', pp.role
+          ) as participant
+        FROM lookbook_project_participants pp
+        JOIN lookbook_profiles prof ON pp.profile_id = prof.id
+        LEFT JOIN users u ON prof.user_id = u.user_id
+        WHERE pp.project_id = p.id
+
+        UNION ALL
+
+        SELECT
+          pec.display_order,
+          ec.name as sort_name,
+          json_build_object(
+            'type', 'external',
+            'external_contributor_id', ec.id,
+            'name', ec.name,
+            'title', ec.title,
+            'organization', ec.organization,
+            'photoUrl', ec.photo_url,
+            'role', pec.role
+          ) as participant
+        FROM lookbook_project_external_contributors pec
+        JOIN lookbook_external_contributors ec ON pec.external_contributor_id = ec.id
+        WHERE pec.project_id = p.id
+      ) team_members
     ) as participants,
   ` : `NULL as participants,`;
   
@@ -116,7 +140,10 @@ const getAllProjects = async (filters = {}) => {
       p.partner_logo_url,
       p.created_at,
       ${participantsQuery}
-      (SELECT COUNT(*)::int FROM lookbook_project_participants pp WHERE pp.project_id = p.id) as participant_count,
+      (
+        (SELECT COUNT(*)::int FROM lookbook_project_participants pp WHERE pp.project_id = p.id) +
+        (SELECT COUNT(*)::int FROM lookbook_project_external_contributors pec WHERE pec.project_id = p.id)
+      ) as participant_count,
       COUNT(*) OVER() as total_count
     FROM lookbook_projects p
     WHERE ${whereClause}
@@ -183,21 +210,44 @@ const getProjectBySlug = async (slug) => {
     SELECT 
       p.*,
       (
-        SELECT json_agg(
-          json_build_object(
-            'profile_id', prof.id,
-            'slug', prof.slug,
-            'name', COALESCE(u.first_name || ' ' || u.last_name, initcap(replace(prof.slug, '-', ' '))),
-            'title', prof.title,
-            'photoUrl', prof.photo_url,
-            'photoLqip', prof.photo_lqip,
-            'role', pp.role
-          ) ORDER BY pp.display_order
-        )
-        FROM lookbook_project_participants pp
-        JOIN lookbook_profiles prof ON pp.profile_id = prof.id
-        LEFT JOIN users u ON prof.user_id = u.user_id
-        WHERE pp.project_id = p.id
+        SELECT json_agg(participant ORDER BY display_order, sort_name)
+        FROM (
+          SELECT
+            pp.display_order,
+            COALESCE(u.first_name || ' ' || u.last_name, initcap(replace(prof.slug, '-', ' '))) as sort_name,
+            json_build_object(
+              'type', 'profile',
+              'profile_id', prof.id,
+              'slug', prof.slug,
+              'name', COALESCE(u.first_name || ' ' || u.last_name, initcap(replace(prof.slug, '-', ' '))),
+              'title', prof.title,
+              'photoUrl', prof.photo_url,
+              'photoLqip', prof.photo_lqip,
+              'role', pp.role
+            ) as participant
+          FROM lookbook_project_participants pp
+          JOIN lookbook_profiles prof ON pp.profile_id = prof.id
+          LEFT JOIN users u ON prof.user_id = u.user_id
+          WHERE pp.project_id = p.id
+
+          UNION ALL
+
+          SELECT
+            pec.display_order,
+            ec.name as sort_name,
+            json_build_object(
+              'type', 'external',
+              'external_contributor_id', ec.id,
+              'name', ec.name,
+              'title', ec.title,
+              'organization', ec.organization,
+              'photoUrl', ec.photo_url,
+              'role', pec.role
+            ) as participant
+          FROM lookbook_project_external_contributors pec
+          JOIN lookbook_external_contributors ec ON pec.external_contributor_id = ec.id
+          WHERE pec.project_id = p.id
+        ) team_members
       ) as participants
     FROM lookbook_projects p
     WHERE p.slug = $1

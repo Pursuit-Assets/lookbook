@@ -68,10 +68,16 @@ function ProjectDetailPage() {
         <div className="mt-lg">
           <h3>Team</h3>
           <div className="mt-sm">
-            {project.participants.map(p => (
-              <Link key={p.slug} to={`/people/${p.slug}`} className="btn btn--outline mr-sm">
-                {p.name}
-              </Link>
+            {project.participants.map((p, index) => (
+              p.slug ? (
+                <Link key={p.slug} to={`/people/${p.slug}`} className="btn btn--outline mr-sm">
+                  {p.name}
+                </Link>
+              ) : (
+                <span key={`${p.name}-${index}`} className="btn btn--outline mr-sm">
+                  {p.name}
+                </span>
+              )
             ))}
           </div>
         </div>
