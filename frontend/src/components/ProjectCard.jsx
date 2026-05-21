@@ -11,6 +11,17 @@ function getImageSrcSet(imageUrl) {
   return `${smallUrl} 400w, ${fullUrl} 1200w`;
 }
 
+function getDisplaySummary(summary) {
+  if (!summary) return null;
+  try {
+    const parsed = JSON.parse(summary);
+    if (parsed && parsed.ambassador_name) return parsed.bio || null;
+  } catch {
+    // not JSON
+  }
+  return summary;
+}
+
 function ProjectCard({ project }) {
   const [imageLoaded, setImageLoaded] = useState(false);
 
@@ -50,8 +61,8 @@ function ProjectCard({ project }) {
       <div className="project-card__body">
         <h3 className="project-card__title">{project.title}</h3>
         
-        {project.summary && (
-          <p className="project-card__summary">{project.summary}</p>
+        {getDisplaySummary(project.summary) && (
+          <p className="project-card__summary">{getDisplaySummary(project.summary)}</p>
         )}
 
         {project.skills && project.skills.length > 0 && (
