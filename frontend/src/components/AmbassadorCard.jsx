@@ -50,12 +50,19 @@ function AmbassadorCard({ project, onClick }) {
       >
         {/* Headshot background */}
         {project.main_image_url && !imageError ? (
-          <div className="absolute inset-0 z-0">
+          <div
+            className="absolute inset-0 z-0"
+            style={{
+              backgroundImage: `url(${getImageUrl(project.main_image_url)})`,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center top',
+              opacity: 0.9,
+            }}
+          >
             <img
               src={getImageUrl(project.main_image_url)}
-              alt={ambassadorName}
-              className="w-full h-full object-cover opacity-90"
-              loading="lazy"
+              alt=""
+              className="sr-only"
               onError={() => setImageError(true)}
             />
             <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/25 to-black/80" />
