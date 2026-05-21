@@ -1691,33 +1691,18 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
 
           if (projectData.success && isAmbassadorProject(projectData.data)) {
             const ambassadorProject = projectData.data;
-            const currentProjectInList = ambassadorList.some(p => p.slug === slug);
+            const index = ambassadorList.findIndex(p => p.slug === slug);
 
-            if (currentProjectInList) {
-              setProject(ambassadorProject);
-              setPerson(null);
-              const index = ambassadorList.findIndex(p => p.slug === slug);
-              setCurrentIndex(index >= 0 ? index : -1);
-              setError(null);
-              analytics.projectViewed(
-                ambassadorProject.slug,
-                ambassadorProject.title,
-                ambassadorProject.skills || [],
-                ambassadorProject.sectors || []
-              );
-            } else if (ambassadorList.length > 0) {
-              setProject(null);
-              setPerson(null);
-              setCurrentIndex(-1);
-              setError(null);
-              navigate(`/people/uft/${ambassadorList[0].slug}`);
-              return;
-            } else {
-              setProject(null);
-              setPerson(null);
-              setCurrentIndex(-1);
-              setError(null);
-            }
+            setProject(ambassadorProject);
+            setPerson(null);
+            setCurrentIndex(index >= 0 ? index : -1);
+            setError(null);
+            analytics.projectViewed(
+              ambassadorProject.slug,
+              ambassadorProject.title,
+              ambassadorProject.skills || [],
+              ambassadorProject.sectors || []
+            );
           } else {
             const errorMessage = projectData?.error || 'UFT ambassador not found';
             setError(errorMessage);

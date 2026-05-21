@@ -5,6 +5,7 @@ import './AmbassadorCard.css';
 
 function AmbassadorCard({ project, onClick }) {
   const [cardRef, setCardRef] = useState(null);
+  const [imageError, setImageError] = useState(false);
 
   // Parse ambassador-specific fields from summary JSON
   let amb = {};
@@ -48,13 +49,14 @@ function AmbassadorCard({ project, onClick }) {
         onClick={onClick}
       >
         {/* Headshot background */}
-        {project.main_image_url ? (
+        {project.main_image_url && !imageError ? (
           <div className="absolute inset-0 z-0">
             <img
               src={getImageUrl(project.main_image_url)}
               alt={ambassadorName}
               className="w-full h-full object-cover opacity-90"
               loading="lazy"
+              onError={() => setImageError(true)}
             />
             <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/25 to-black/80" />
             <div className="holo-effect absolute inset-0 opacity-0 hover:opacity-30 transition-opacity duration-300 pointer-events-none" />

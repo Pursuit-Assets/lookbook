@@ -41,6 +41,11 @@ function setCachedProjects(cacheKey, data) {
   });
 }
 
+function invalidateProjectCache() {
+  projectCache.clear();
+  console.log('🗑️  Project cache cleared');
+}
+
 async function replaceExternalContributors(client, projectId, externalContributors = []) {
   await client.query('DELETE FROM lookbook_project_external_contributors WHERE project_id = $1', [projectId]);
 
@@ -104,7 +109,7 @@ router.get('/', async (req, res) => {
     const cachedResult = getCachedProjects(cacheKey);
     if (cachedResult) {
       console.log(`📦 Cache HIT for projects query`);
-      res.set('Cache-Control', 'public, max-age=600');
+      res.set('Cache-Control', 'no-cache');
       return res.json({
         success: true,
         data: cachedResult.projects,
@@ -132,7 +137,7 @@ router.get('/', async (req, res) => {
       
       console.log(`✅ Fetched ${result.projects.length} projects in ${queryTime}ms (cached for next request)`);
 
-      res.set('Cache-Control', 'public, max-age=600');
+      res.set('Cache-Control', 'no-cache');
       res.json({
         success: true,
         data: result.projects,
@@ -234,7 +239,7 @@ router.get('/:slug', async (req, res) => {
       });
     }
     
-    res.set('Cache-Control', 'public, max-age=600');
+    res.set('Cache-Control', 'no-cache');
     res.json({
       success: true,
       data: project
