@@ -54,7 +54,7 @@ router.get('/', async (req, res) => {
     const hasCacheBuster = req.query._t; // Cache-busting parameter
     if (!hasFilters && !hasCacheBuster && cache.profiles && isCacheValid(cache.profilesTimestamp)) {
       // Add cache headers for browser caching
-      res.set('Cache-Control', 'public, max-age=300'); // 5 minutes
+      res.set('Cache-Control', 'no-cache');
       return res.json(cache.profiles);
     }
     
@@ -86,10 +86,10 @@ router.get('/', async (req, res) => {
     if (!hasFilters) {
       cache.profiles = response;
       cache.profilesTimestamp = Date.now();
-      res.set('Cache-Control', 'public, max-age=300'); // 5 minutes
+      res.set('Cache-Control', 'no-cache');
     } else {
       // Shorter cache for filtered results
-      res.set('Cache-Control', 'public, max-age=60'); // 1 minute
+      res.set('Cache-Control', 'no-cache');
     }
     
     res.json(response);
@@ -112,7 +112,7 @@ router.get('/filters', async (req, res) => {
   try {
     // Check cache first
     if (cache.filters && isCacheValid(cache.filtersTimestamp)) {
-      res.set('Cache-Control', 'public, max-age=300'); // 5 minutes
+      res.set('Cache-Control', 'no-cache');
       return res.json(cache.filters);
     }
     
@@ -134,7 +134,7 @@ router.get('/filters', async (req, res) => {
     cache.filtersTimestamp = Date.now();
     
     // Set cache headers
-    res.set('Cache-Control', 'public, max-age=300'); // 5 minutes
+    res.set('Cache-Control', 'no-cache');
     
     res.json(response);
   } catch (error) {
@@ -376,7 +376,7 @@ router.get('/:slug', async (req, res) => {
     }
     
     // Set cache headers for individual profiles (longer cache)
-    res.set('Cache-Control', 'public, max-age=600'); // 10 minutes
+    res.set('Cache-Control', 'no-cache');
     
     res.json({
       success: true,
