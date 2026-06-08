@@ -46,11 +46,12 @@ async function resolveProfilePhotoUrl(rawPhotoUrl, slug) {
 
 router.get('/', async (req, res) => {
   try {
-    const { search, skills, openToWork, industries, limit, offset, page } = req.query;
+    const { search, skills, openToWork, industries, limit, offset, page, includeIncomplete } = req.query;
+    const showIncomplete = includeIncomplete === 'true';
     
     // If no filters, no pagination, and cache is valid, return cached data
     // BUT: ignore cache if _t (timestamp) parameter is present (cache-busting)
-    const hasFilters = search || skills || openToWork || industries || limit || offset || page;
+    const hasFilters = search || skills || openToWork || industries || limit || offset || page || showIncomplete;
     const hasCacheBuster = req.query._t; // Cache-busting parameter
     if (!hasFilters && !hasCacheBuster && cache.profiles && isCacheValid(cache.profilesTimestamp)) {
       // Add cache headers for browser caching
@@ -65,7 +66,8 @@ router.get('/', async (req, res) => {
       industries: industries ? (Array.isArray(industries) ? industries : industries.split(',')) : undefined,
       openToWork: openToWork === 'true' ? true : openToWork === 'false' ? false : undefined,
       limit: parseInt(limit) || 50,
-      offset: page ? (parseInt(page) - 1) * (parseInt(limit) || 50) : parseInt(offset) || 0
+      offset: page ? (parseInt(page) - 1) * (parseInt(limit) || 50) : parseInt(offset) || 0,
+      completeOnly: !showIncomplete,
     };
     
     const result = await profileQueries.getAllProfiles(filters);
@@ -366,9 +368,10 @@ router.post('/bulk', async (req, res) => {
 router.get('/:slug', async (req, res) => {
   try {
     const { slug } = req.params;
+    const showIncomplete = req.query.includeIncomplete === 'true';
     const profile = await profileQueries.getProfileBySlug(slug);
     
-    if (!profile) {
+    if (!profile || (!showIncomplete && !profileQueries.isProfileComplete(profile))) {
       return res.status(404).json({ 
         success: false,
         error: 'Profile not found' 

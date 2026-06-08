@@ -187,7 +187,17 @@ export const profilesAPI = {
   getAll: (filters = {}) => {
     return cachedGetWithParams('/profiles', filters, 'profiles-list', 300000); // 5-min cache
   },
-  getBySlug: (slug) => cachedGet(`/profiles/${slug}`, `profile-${slug}`, 120000), // Cache for 2 minutes
+  getBySlug: (slug, options = {}) => {
+    if (options.includeIncomplete) {
+      return cachedGetWithParams(
+        `/profiles/${slug}`,
+        { includeIncomplete: true },
+        `profile-${slug}-admin`,
+        120000
+      );
+    }
+    return cachedGet(`/profiles/${slug}`, `profile-${slug}`, 120000);
+  },
   getFilters: () => cachedGet('/profiles/filters', 'profiles-filters', 300000), // Cache for 5 minutes
   create: (data) => {
     apiCache.clear(); // Invalidate on create

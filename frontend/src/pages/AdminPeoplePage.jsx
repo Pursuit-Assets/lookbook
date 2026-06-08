@@ -68,7 +68,7 @@ function AdminPeoplePage() {
     try {
       setLoading(true);
       // Add cache-busting parameter to force fresh data from backend (bypasses server-side cache)
-      const response = await profilesAPI.getAll({ limit: 50, _t: Date.now() });
+      const response = await profilesAPI.getAll({ limit: 50, includeIncomplete: true, _t: Date.now() });
       setPeople(response.data || []);
     } catch (error) {
       console.error('Error fetching people:', error);

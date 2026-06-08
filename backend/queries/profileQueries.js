@@ -3,12 +3,38 @@
 
 const { pool } = require('../db/dbConfig');
 
+// Profiles need substance beyond a slug/photo to appear on the public site.
+const COMPLETE_PROFILE_SQL = `
+  NULLIF(BTRIM(p.title), '') IS NOT NULL
+  AND NULLIF(BTRIM(p.bio), '') IS NOT NULL
+  AND COALESCE(array_length(p.skills, 1), 0) > 0
+  AND COALESCE(array_length(p.industry_expertise, 1), 0) > 0
+`;
+
+function isProfileComplete(profile) {
+  if (!profile) return false;
+
+  const title = (profile.title || '').trim();
+  const bio = (profile.bio || '').trim();
+  const skills = profile.skills || [];
+  const industries = profile.industry_expertise || [];
+
+  return Boolean(
+    title &&
+    bio &&
+    Array.isArray(skills) &&
+    skills.length > 0 &&
+    Array.isArray(industries) &&
+    industries.length > 0
+  );
+}
+
 // =====================================================
 // GET ALL PROFILES
 // =====================================================
 
 const getAllProfiles = async (filters = {}) => {
-  const { search, skills, openToWork, industries, limit = 50, offset = 0 } = filters;
+  const { search, skills, openToWork, industries, limit = 50, offset = 0, completeOnly = false } = filters;
   
   // Build WHERE clause conditions
   const conditions = [];
@@ -48,6 +74,10 @@ const getAllProfiles = async (filters = {}) => {
     conditions.push(`p.open_to_work = $${paramCount}`);
     params.push(openToWork);
     paramCount++;
+  }
+
+  if (completeOnly) {
+    conditions.push(`(${COMPLETE_PROFILE_SQL})`);
   }
   
   const whereClause = conditions.length > 0 
@@ -324,7 +354,8 @@ module.exports = {
   deleteProfile,
   addExperience,
   getAllSkills,
-  getAllIndustries
+  getAllIndustries,
+  isProfileComplete,
 };
 
 

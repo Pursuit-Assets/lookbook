@@ -115,7 +115,7 @@ function AdminPersonEditPage() {
   const fetchPerson = async () => {
     try {
       setLoading(true);
-      const response = await profilesAPI.getBySlug(slug);
+      const response = await profilesAPI.getBySlug(slug, { includeIncomplete: true });
       const person = response.data;
       
       setPhotoPreviewFailed(false);
