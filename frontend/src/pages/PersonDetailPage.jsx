@@ -72,6 +72,28 @@ const PEOPLE_GROUP_UFT = 'uft-ai-ambassadors';
 const UFT_COHORT_VALUE = 'UFT AI Ambassadors';
 const GRID_PAGE_SIZE = 8;
 
+const buildPeopleNavListKey = ({ search, skills, industries, openToWork }) =>
+  JSON.stringify({
+    search: search || '',
+    skills: [...(skills || [])].sort().join(','),
+    industries: [...(industries || [])].sort().join(','),
+    openToWork: Boolean(openToWork),
+  });
+
+const buildPeopleGridCacheKey = ({ page, search, skills, industries, openToWork }) =>
+  `people:${page}:${buildPeopleNavListKey({ search, skills, industries, openToWork })}`;
+
+const buildProjectsNavListKey = ({ search, skills, sectors, cohort }) =>
+  JSON.stringify({
+    search: search || '',
+    skills: [...(skills || [])].sort().join(','),
+    sectors: [...(sectors || [])].sort().join(','),
+    cohort: cohort || '',
+  });
+
+const buildProjectsGridCacheKey = ({ page, search, skills, sectors, cohort }) =>
+  `projects:${page}:${buildProjectsNavListKey({ search, skills, sectors, cohort })}`;
+
 // Reusable Page Navigation Button Component
 const PageNavButton = ({ onClick, onMouseEnter, disabled, direction = 'left', ariaLabel }) => {
   const isLeft = direction === 'left';
@@ -769,6 +791,9 @@ function PersonDetailPage() {
   const filtersFetchedRef = useRef(false); // Track if filters have been fetched to prevent duplicate calls
   const fetchVersionRef = useRef(0); // Track fetch version to prevent stale responses from updating state
   const abortControllerRef = useRef(null); // AbortController to cancel in-flight requests on navigation
+  const navigationListContextRef = useRef(null);
+  const navigationListReadyRef = useRef(false);
+  const gridPageCacheRef = useRef(new Map());
   const [allProfiles, setAllProfiles] = useState([]);
   const [allProjects, setAllProjects] = useState([]);
   const [ambassadorProjects, setAmbassadorProjects] = useState([]);
@@ -973,6 +998,13 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
       const cohortFilter = selectedInitiative 
         ? initiatives.find(i => i.slug === selectedInitiative)?.cohort_value 
         : undefined;
+      const projectsCacheKey = buildProjectsGridCacheKey({
+        page: targetPage,
+        search: debouncedProjectSearch,
+        skills: projectSkillsFilter,
+        sectors: projectSectorsFilter,
+        cohort: cohortFilter,
+      });
       projectsAPI.getAll({
         limit,
         offset,
@@ -982,8 +1014,22 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
         cohort: cohortFilter,
         excludeAmbassadors: true,
         includeParticipants: true
-      });
+      }).then((response) => {
+        if (!response?.success) return;
+        const projectRows = excludeAmbassadorProjects(response.data);
+        gridPageCacheRef.current.set(projectsCacheKey, {
+          data: projectRows,
+          total: response.pagination?.total || response.total || projectRows.length,
+        });
+      }).catch(() => {});
     } else {
+      const cacheKey = buildPeopleGridCacheKey({
+        page: targetPage,
+        search: debouncedPeopleSearch,
+        skills: peopleSkillsFilter,
+        industries: peopleIndustriesFilter,
+        openToWork: peopleFilters.openToWork,
+      });
       profilesAPI.getAll({
         limit,
         offset,
@@ -991,7 +1037,14 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
         skills: peopleSkillsFilter.length > 0 ? peopleSkillsFilter : undefined,
         industries: peopleIndustriesFilter.length > 0 ? peopleIndustriesFilter : undefined,
         openToWork: peopleFilters.openToWork ? true : undefined
-      });
+      }).then((response) => {
+        if (!response?.success) return;
+        const pageData = response.data || [];
+        gridPageCacheRef.current.set(cacheKey, {
+          data: pageData,
+          total: response.pagination?.total || response.total || pageData.length,
+        });
+      }).catch(() => {});
     }
   }, [gridPagination, viewMode, debouncedProjectSearch, debouncedPeopleSearch, projectSkillsFilter, projectSectorsFilter, peopleSkillsFilter, peopleIndustriesFilter, peopleFilters.openToWork, selectedInitiative, initiatives, isUftPeopleMode, isFilterUrl]);
 
@@ -1126,6 +1179,22 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
     setProjectCarouselIndex(0);
   }, [filteredPersonProjects.length, debouncedProjectSearch, projectSkillsFilter, projectSectorsFilter]);
 
+  // Detail next/prev can reuse the loaded navigation list until filters change.
+  useEffect(() => {
+    navigationListReadyRef.current = false;
+    navigationListContextRef.current = null;
+  }, [
+    debouncedPeopleSearch,
+    debouncedProjectSearch,
+    peopleSkillsFilter,
+    peopleIndustriesFilter,
+    peopleFilters.openToWork,
+    projectSkillsFilter,
+    projectSectorsFilter,
+    selectedInitiative,
+    selectedPeopleGroup,
+  ]);
+
   // Fetch data based on current view
   useEffect(() => {
     let isMounted = true;
@@ -1140,6 +1209,7 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
       const isCurrentRequest = () => abortControllerRef.current === controller && !controller.signal.aborted;
 
       let slowLoadTimer = null;
+      let progressBarActive = false;
 
       // Only show loading spinner when we have no data to display (avoids flicker when switching tabs)
       const hasCachedData =
@@ -1149,6 +1219,7 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
       if (layoutView === 'grid' || layoutView === 'list') {
         isFetchingRef.current = true;
         if (isMounted && !hasCachedData) {
+          progressBarActive = true;
           setGridListLoading(true);
           startLoading();
           setLoadingProgress(10); // Start at 10%
@@ -1205,8 +1276,30 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
             }
           }
         } else if (viewMode === 'people') {
+          const peopleGridCacheKey = buildPeopleGridCacheKey({
+            page: gridPage,
+            search: debouncedPeopleSearch,
+            skills: peopleSkillsFilter,
+            industries: peopleIndustriesFilter,
+            openToWork: peopleFilters.openToWork,
+          });
+          const cachedPeoplePage = gridPageCacheRef.current.get(peopleGridCacheKey);
+          if (cachedPeoplePage) {
+            setAllProfiles(cachedPeoplePage.data);
+            setTotalProfiles(cachedPeoplePage.total);
+            navigationListReadyRef.current = false;
+            if (slowLoadTimer) clearTimeout(slowLoadTimer);
+            if (isCurrentRequest()) {
+              setSlowLoadWarning(false);
+              setGridListLoading(false);
+              setPaginationPending(false);
+              isFetchingRef.current = false;
+            }
+            return;
+          }
+
           try {
-            setLoadingProgress(30);
+            if (progressBarActive) setLoadingProgress(30);
             const response = await profilesAPI.getAll({
               limit,
               offset,
@@ -1217,25 +1310,32 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
             });
 
             if (controller.signal.aborted) return;
-            setLoadingProgress(80);
+            if (progressBarActive) setLoadingProgress(80);
             if (response && response.success) {
-              setAllProfiles(response.data || []);
-              const total = response.pagination?.total || response.total || (response.data ? response.data.length : 0);
+              const pageData = response.data || [];
+              const total = response.pagination?.total || response.total || pageData.length;
+              setAllProfiles(pageData);
               setTotalProfiles(total);
+              gridPageCacheRef.current.set(peopleGridCacheKey, { data: pageData, total });
+              navigationListReadyRef.current = false;
             } else {
               console.error('API response error:', response);
               setAllProfiles([]);
               setTotalProfiles(0);
             }
-            setLoadingProgress(100);
-            completeLoading();
+            if (progressBarActive) {
+              setLoadingProgress(100);
+              completeLoading();
+            }
           } catch (err) {
             if (controller.signal.aborted) return;
             console.error('Error fetching profiles:', err);
             setAllProfiles([]);
             setTotalProfiles(0);
-            setLoadingProgress(100);
-            completeLoading();
+            if (progressBarActive) {
+              setLoadingProgress(100);
+              completeLoading();
+            }
           } finally {
             if (slowLoadTimer) clearTimeout(slowLoadTimer);
             if (isCurrentRequest()) {
@@ -1319,6 +1419,28 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
               }
               setLoadingProgress(100);
             } else {
+              const projectsGridCacheKey = buildProjectsGridCacheKey({
+                page: gridPage,
+                search: debouncedProjectSearch,
+                skills: projectSkillsFilter,
+                sectors: projectSectorsFilter,
+                cohort: cohortFilter,
+              });
+              const cachedProjectsPage = gridPageCacheRef.current.get(projectsGridCacheKey);
+              if (cachedProjectsPage) {
+                setAllProjects(cachedProjectsPage.data);
+                setTotalProjects(cachedProjectsPage.total);
+                navigationListReadyRef.current = false;
+                if (slowLoadTimer) clearTimeout(slowLoadTimer);
+                if (isCurrentRequest()) {
+                  setSlowLoadWarning(false);
+                  setGridListLoading(false);
+                  setPaginationPending(false);
+                  isFetchingRef.current = false;
+                }
+                return;
+              }
+
               // Standard fetch for paginated views
               const response = await projectsAPI.getAll({
                 limit,
@@ -1332,15 +1454,19 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
               });
 
               if (controller.signal.aborted) return;
-              setLoadingProgress(80);
+              if (progressBarActive) setLoadingProgress(80);
               if (response.success) {
                 const projectRows = excludeAmbassadorProjects(response.data);
-                setAllProjects(projectRows);
                 const total = response.pagination?.total || response.total || projectRows.length;
+                setAllProjects(projectRows);
                 setTotalProjects(total);
+                gridPageCacheRef.current.set(projectsGridCacheKey, { data: projectRows, total });
+                navigationListReadyRef.current = false;
               }
-              setLoadingProgress(100);
-              completeLoading();
+              if (progressBarActive) {
+                setLoadingProgress(100);
+                completeLoading();
+              }
             }
           } catch (err) {
             if (controller.signal.aborted) return;
@@ -1727,13 +1853,64 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
       fetchUftPersonAndList();
     } else if (viewMode === 'people') {
       const fetchPersonAndList = async () => {
-        // Don't skip fetch when filters change - we need to refetch filtered list
-        // Only skip if we have the exact person AND the list hasn't changed
-        
-        startLoading();
-        setLoadingProgress(10);
+        const navListKey = buildPeopleNavListKey({
+          search: debouncedPeopleSearch,
+          skills: peopleSkillsFilter,
+          industries: peopleIndustriesFilter,
+          openToWork: peopleFilters.openToWork,
+        });
+        const canReuseNavList =
+          navigationListReadyRef.current &&
+          navigationListContextRef.current === navListKey &&
+          allProfiles.some((profile) => profile.slug === slug);
+
+        if (canReuseNavList) {
+          const listProfile = allProfiles.find((profile) => profile.slug === slug);
+          setLoading(false);
+          setPerson(listProfile);
+          setProject(null);
+          setCurrentIndex(allProfiles.findIndex((profile) => profile.slug === slug));
+          setError(null);
+
+          try {
+            const personData = await profilesAPI.getBySlug(slug);
+            if (currentFetchVersion !== fetchVersionRef.current) return;
+
+            if (personData?.success) {
+              setPerson(personData.data);
+              analytics.personViewed(
+                personData.data.slug,
+                `${personData.data.first_name} ${personData.data.last_name}`,
+                personData.data.skills || []
+              );
+            } else if (allProfiles.length === 0) {
+              setPerson(null);
+              setProject(null);
+              setCurrentIndex(-1);
+              setError(null);
+            } else {
+              setError(personData?.error || 'Person not found');
+            }
+          } catch (err) {
+            if (currentFetchVersion !== fetchVersionRef.current) return;
+            console.error('Error fetching person:', err);
+            const errorMessage = err.response?.data?.error || err.response?.data?.message || 'Person not found';
+            setError(errorMessage);
+          } finally {
+            if (currentFetchVersion === fetchVersionRef.current) {
+              setLoading(false);
+            }
+          }
+          return;
+        }
+
+        const showDetailProgress = !hasExactData && !hasDataInList;
+        if (showDetailProgress) {
+          startLoading();
+          setLoadingProgress(10);
+        }
         try {
-          setLoadingProgress(30);
+          if (showDetailProgress) setLoadingProgress(30);
           // Fetch both in parallel
           // In detail view, fetch filtered data from API (like grid/list) for navigation
           // This uses server-side filtering and avoids client-side filtering conflicts
@@ -1762,12 +1939,14 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
             ? listDataResult.value
             : { success: false };
           
-          setLoadingProgress(70);
+          if (showDetailProgress) setLoadingProgress(70);
           
           // Update allProfiles with filtered/unfiltered list from API (single source of truth)
           if (listData && listData.success) {
             setAllProfiles(listData.data);
             setTotalProfiles(listData.data.length);
+            navigationListContextRef.current = navListKey;
+            navigationListReadyRef.current = true;
           }
           
           const profiles = listData && listData.success ? listData.data : allProfiles;
@@ -1824,8 +2003,10 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
               setError(errorMessage);
             }
           }
-          setLoadingProgress(100);
-          completeLoading();
+          if (showDetailProgress) {
+            setLoadingProgress(100);
+            completeLoading();
+          }
         } catch (err) {
           // Check if this response is stale before updating error state
           if (currentFetchVersion !== fetchVersionRef.current) {
@@ -1834,8 +2015,10 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
           console.error('Error fetching person:', err);
           const errorMessage = err.response?.data?.error || err.response?.data?.message || 'Person not found';
           setError(errorMessage);
-          setLoadingProgress(100);
-          completeLoading();
+          if (showDetailProgress) {
+            setLoadingProgress(100);
+            completeLoading();
+          }
         } finally {
           // Only update loading state if this is still the current request
           if (currentFetchVersion === fetchVersionRef.current) {
@@ -1846,26 +2029,80 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
       fetchPersonAndList();
     } else if (viewMode === 'projects') {
       const fetchProjectAndList = async () => {
-        // Don't skip fetch when filters change - we need to refetch filtered list
-        // If we have basic data in the list, don't show loading screen
-        // but still fetch full detail in background
+        const cohortFilter = selectedInitiative
+          ? initiatives.find(i => i.slug === selectedInitiative)?.cohort_value
+          : undefined;
+        const navListKey = buildProjectsNavListKey({
+          search: debouncedProjectSearch,
+          skills: projectSkillsFilter,
+          sectors: projectSectorsFilter,
+          cohort: cohortFilter,
+        });
+        const canReuseNavList =
+          navigationListReadyRef.current &&
+          navigationListContextRef.current === navListKey &&
+          allProjects.some((item) => item.slug === slug);
+
+        if (canReuseNavList) {
+          const listProject = allProjects.find((item) => item.slug === slug);
+          setLoading(false);
+          setProject(listProject);
+          setPerson(null);
+          setCurrentIndex(allProjects.findIndex((item) => item.slug === slug));
+          setError(null);
+
+          try {
+            const projectData = await projectsAPI.getBySlug(slug);
+            if (currentFetchVersion !== fetchVersionRef.current) return;
+
+            if (projectData?.success) {
+              if (isAmbassadorProject(projectData.data)) {
+                navigate(`/people/uft/${slug}`, { replace: true });
+                return;
+              }
+              setProject(projectData.data);
+              analytics.projectViewed(
+                projectData.data.slug,
+                projectData.data.title,
+                projectData.data.skills || [],
+                projectData.data.sectors || []
+              );
+            } else if (allProjects.length === 0) {
+              setProject(null);
+              setPerson(null);
+              setCurrentIndex(-1);
+              setError(null);
+            } else {
+              setError(projectData?.error || 'Project not found');
+            }
+          } catch (err) {
+            if (currentFetchVersion !== fetchVersionRef.current) return;
+            console.error('Error fetching project:', err);
+            const errorMessage = err.response?.data?.error || err.response?.data?.message || 'Project not found';
+            setError(errorMessage);
+          } finally {
+            if (currentFetchVersion === fetchVersionRef.current) {
+              setLoading(false);
+            }
+          }
+          return;
+        }
+
         const hasBasicData = allProjects.some(p => p.slug === slug);
         if (hasBasicData) {
           setLoading(false); // Don't show loading screen
         }
-        
-        startLoading();
-        setLoadingProgress(10);
+
+        const showDetailProgress = !hasExactData && !hasDataInList && !hasBasicData;
+        if (showDetailProgress) {
+          startLoading();
+          setLoadingProgress(10);
+        }
         try {
-          setLoadingProgress(30);
+          if (showDetailProgress) setLoadingProgress(30);
           // Fetch both in parallel
           // In detail view, fetch filtered data from API (like grid/list) for navigation
           // This uses server-side filtering and avoids client-side filtering conflicts
-          // Get cohort value from selected initiative for filtering
-          const cohortFilter = selectedInitiative 
-            ? initiatives.find(i => i.slug === selectedInitiative)?.cohort_value 
-            : undefined;
-          
           const [projectDataResult, listDataResult] = await Promise.allSettled([
             projectsAPI.getBySlug(slug), // This already includes participants
             projectsAPI.getAll({
@@ -1892,7 +2129,7 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
             ? listDataResult.value
             : { success: false };
           
-          setLoadingProgress(70);
+          if (showDetailProgress) setLoadingProgress(70);
           
           // Update allProjects with filtered/unfiltered list from API (single source of truth)
           const listProjects = listData && listData.success
@@ -1901,6 +2138,10 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
 
           setAllProjects(listProjects);
           setTotalProjects(listProjects.length);
+          if (listData && listData.success) {
+            navigationListContextRef.current = navListKey;
+            navigationListReadyRef.current = true;
+          }
 
           const projects = listProjects;
           
@@ -1962,8 +2203,10 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
               setError(errorMessage);
             }
           }
-          setLoadingProgress(100);
-          completeLoading();
+          if (showDetailProgress) {
+            setLoadingProgress(100);
+            completeLoading();
+          }
         } catch (err) {
           // Check if this response is stale before updating error state
           if (currentFetchVersion !== fetchVersionRef.current) {
@@ -1972,8 +2215,10 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
           console.error('Error fetching project:', err);
           const errorMessage = err.response?.data?.error || err.response?.data?.message || 'Project not found';
           setError(errorMessage);
-          setLoadingProgress(100);
-          completeLoading();
+          if (showDetailProgress) {
+            setLoadingProgress(100);
+            completeLoading();
+          }
         } finally {
           // Only update loading state if this is still the current request
           if (currentFetchVersion === fetchVersionRef.current) {
@@ -3325,15 +3570,13 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                       ))}
                     </div>
                   ) : (
-                    <div
-                      key={`projects-grid-${gridPage}`}
-                      className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-[18px] mb-0" 
-                      style={{
-                        animation: 'fadeIn 0.3s ease-in-out',
-                        gridAutoRows: 'auto',
-                        overflow: 'visible'
-                      }}
-                    >
+                  <div 
+                    className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-[18px] mb-0" 
+                    style={{
+                      gridAutoRows: 'auto',
+                      overflow: 'visible'
+                    }}
+                  >
                       {/* In grid view, apply client-side filters */}
                       {filteredProjects.map((proj) => (
                           <MemoizedProjectCard
@@ -3470,10 +3713,8 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                   </div>
                 ) : (
                   <div 
-                    key={`people-grid-${gridPage}`}
                     className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-[18px] mb-0" 
                     style={{
-                      animation: 'fadeIn 0.3s ease-in-out',
                       gridAutoRows: 'auto',
                       overflow: 'visible'
                     }}
