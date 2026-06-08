@@ -9,12 +9,43 @@ const { processBase64Image, isBase64Image, uploadFileExists } = require('../util
 
 // Simple in-memory cache for profiles (5 minute TTL)
 const cache = {
-  profiles: null,
-  profilesTimestamp: 0,
   filters: null,
   filtersTimestamp: 0,
   TTL: 5 * 60 * 1000 // 5 minutes in milliseconds
 };
+
+const profileListCache = new Map();
+
+function getProfileListCacheKey(filters) {
+  return JSON.stringify({
+    search: filters.search || '',
+    skills: (filters.skills || []).slice().sort().join(','),
+    industries: (filters.industries || []).slice().sort().join(','),
+    openToWork: filters.openToWork,
+    limit: filters.limit || 50,
+    offset: filters.offset || 0,
+    completeOnly: filters.completeOnly !== false,
+  });
+}
+
+function getCachedProfileList(cacheKey) {
+  const cached = profileListCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < cache.TTL) {
+    return cached.data;
+  }
+  return null;
+}
+
+function setCachedProfileList(cacheKey, data) {
+  profileListCache.set(cacheKey, {
+    data,
+    timestamp: Date.now(),
+  });
+}
+
+function invalidateProfileListCache() {
+  profileListCache.clear();
+}
 
 // Helper to check if cache is valid
 function isCacheValid(timestamp) {
@@ -48,17 +79,8 @@ router.get('/', async (req, res) => {
   try {
     const { search, skills, openToWork, industries, limit, offset, page, includeIncomplete } = req.query;
     const showIncomplete = includeIncomplete === 'true';
-    
-    // If no filters, no pagination, and cache is valid, return cached data
-    // BUT: ignore cache if _t (timestamp) parameter is present (cache-busting)
-    const hasFilters = search || skills || openToWork || industries || limit || offset || page || showIncomplete;
     const hasCacheBuster = req.query._t; // Cache-busting parameter
-    if (!hasFilters && !hasCacheBuster && cache.profiles && isCacheValid(cache.profilesTimestamp)) {
-      // Add cache headers for browser caching
-      res.set('Cache-Control', 'no-cache');
-      return res.json(cache.profiles);
-    }
-    
+
     // Parse filters
     const filters = {
       search,
@@ -69,6 +91,15 @@ router.get('/', async (req, res) => {
       offset: page ? (parseInt(page) - 1) * (parseInt(limit) || 50) : parseInt(offset) || 0,
       completeOnly: !showIncomplete,
     };
+
+    const cacheKey = getProfileListCacheKey(filters);
+    if (!hasCacheBuster) {
+      const cachedResponse = getCachedProfileList(cacheKey);
+      if (cachedResponse) {
+        res.set('Cache-Control', 'no-cache');
+        return res.json(cachedResponse);
+      }
+    }
     
     const result = await profileQueries.getAllProfiles(filters);
     
@@ -84,16 +115,10 @@ router.get('/', async (req, res) => {
       }
     };
     
-    // Cache the response if no filters
-    if (!hasFilters) {
-      cache.profiles = response;
-      cache.profilesTimestamp = Date.now();
-      res.set('Cache-Control', 'no-cache');
-    } else {
-      // Shorter cache for filtered results
-      res.set('Cache-Control', 'no-cache');
+    if (!hasCacheBuster) {
+      setCachedProfileList(cacheKey, response);
     }
-    
+    res.set('Cache-Control', 'no-cache');
     res.json(response);
   } catch (error) {
     console.error('Error fetching profiles:', error);
@@ -342,7 +367,7 @@ router.post('/bulk', async (req, res) => {
     }
 
     // Invalidate cache
-    cache.profiles = null;
+    invalidateProfileListCache();
     cache.filters = null;
 
     res.status(201).json({
@@ -637,7 +662,7 @@ router.post('/', async (req, res) => {
     }
 
     // Invalidate cache
-    cache.profiles = null;
+    invalidateProfileListCache();
     cache.filters = null;
     
     const response = {
@@ -905,7 +930,7 @@ router.put('/:slug', async (req, res) => {
     }
     
     // Invalidate cache
-    cache.profiles = null;
+    invalidateProfileListCache();
     
     // Build response with optional warning
     const response = {
@@ -951,7 +976,7 @@ router.delete('/:slug', async (req, res) => {
     }
     
     // Invalidate cache
-    cache.profiles = null;
+    invalidateProfileListCache();
     cache.filters = null;
     
     res.json({

@@ -3,30 +3,28 @@
 
 const { pool } = require('../db/dbConfig');
 
-// Profiles need substance beyond a slug/photo to appear on the public site.
-const COMPLETE_PROFILE_SQL = `
-  NULLIF(BTRIM(p.title), '') IS NOT NULL
-  AND NULLIF(BTRIM(p.bio), '') IS NOT NULL
-  AND COALESCE(array_length(p.skills, 1), 0) > 0
-  AND COALESCE(array_length(p.industry_expertise, 1), 0) > 0
+// Hide auto-generated placeholder profiles (Builder 261, builder-509, etc.) from the public site.
+const PUBLIC_PROFILE_SQL = `
+  NOT (
+    p.slug ~ '^builder-[0-9]+$'
+    OR COALESCE(u.first_name || ' ' || u.last_name, '') ~ '^Builder [0-9]+$'
+  )
 `;
 
+function isStubProfile(profile) {
+  if (!profile) return true;
+
+  const slug = (profile.slug || '').trim();
+  if (/^builder-\d+$/i.test(slug)) return true;
+
+  const name = (profile.name || '').trim();
+  if (/^Builder \d+$/i.test(name)) return true;
+
+  return false;
+}
+
 function isProfileComplete(profile) {
-  if (!profile) return false;
-
-  const title = (profile.title || '').trim();
-  const bio = (profile.bio || '').trim();
-  const skills = profile.skills || [];
-  const industries = profile.industry_expertise || [];
-
-  return Boolean(
-    title &&
-    bio &&
-    Array.isArray(skills) &&
-    skills.length > 0 &&
-    Array.isArray(industries) &&
-    industries.length > 0
-  );
+  return !isStubProfile(profile);
 }
 
 // =====================================================
@@ -77,7 +75,7 @@ const getAllProfiles = async (filters = {}) => {
   }
 
   if (completeOnly) {
-    conditions.push(`(${COMPLETE_PROFILE_SQL})`);
+    conditions.push(`(${PUBLIC_PROFILE_SQL})`);
   }
   
   const whereClause = conditions.length > 0 
@@ -356,6 +354,7 @@ module.exports = {
   getAllSkills,
   getAllIndustries,
   isProfileComplete,
+  isStubProfile,
 };
 
 
