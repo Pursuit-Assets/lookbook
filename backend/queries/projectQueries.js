@@ -18,7 +18,8 @@ const getAllProjects = async (filters = {}) => {
     limit = 50,
     offset = 0,
     excludeAmbassadors = false,
-    includeParticipants = false // New flag to optionally include participants
+    includeParticipants = false, // New flag to optionally include participants
+    excludeHiddenInitiatives = false // When true, hide projects whose cohort belongs to a hidden (is_active=false) initiative
   } = filters;
   
   // Build participants subquery only if requested
@@ -64,9 +65,16 @@ const getAllProjects = async (filters = {}) => {
   ` : `NULL as participants,`;
   
   // Build WHERE clause conditions
-  const whereConditions = ['p.status = $1'];
-  const params = [status];
-  let paramCount = 2;
+  // status 'all' (admin-only, enforced at route level) skips the status filter
+  const whereConditions = [];
+  const params = [];
+  let paramCount = 1;
+
+  if (status !== 'all') {
+    whereConditions.push(`p.status = $${paramCount}`);
+    params.push(status);
+    paramCount++;
+  }
   
   // Text search (title, summary) - use index-friendly search if possible
   if (search) {
@@ -117,8 +125,18 @@ const getAllProjects = async (filters = {}) => {
   if (hasDemoVideo !== undefined) {
     whereConditions.push(`(p.demo_video_url IS ${hasDemoVideo ? 'NOT NULL' : 'NULL'})`);
   }
+
+  // Initiative-level visibility override: a hidden initiative (is_active=false)
+  // suppresses ALL of its projects publicly, regardless of each project's own
+  // status. Admins skip this (excludeHiddenInitiatives=false) so they can preview.
+  if (excludeHiddenInitiatives) {
+    whereConditions.push(`NOT EXISTS (
+      SELECT 1 FROM lookbook_initiatives li
+      WHERE li.cohort_value = p.cohort AND li.is_active = false
+    )`);
+  }
   
-  const whereClause = whereConditions.join(' AND ');
+  const whereClause = whereConditions.length > 0 ? whereConditions.join(' AND ') : 'TRUE';
   
   // Optimize ORDER BY clause: When filtering by cohort, ensure we use the composite index
   // The composite index (status, cohort, created_at DESC) can satisfy both WHERE and ORDER BY
@@ -259,7 +277,11 @@ const getProjectBySlug = async (slug) => {
           JOIN lookbook_external_contributors ec ON pec.external_contributor_id = ec.id
           WHERE pec.project_id = p.id
         ) team_members
-      ) as participants
+      ) as participants,
+      EXISTS (
+        SELECT 1 FROM lookbook_initiatives li
+        WHERE li.cohort_value = p.cohort AND li.is_active = false
+      ) as initiative_hidden
     FROM lookbook_projects p
     WHERE p.slug = $1
   `;
@@ -290,7 +312,8 @@ const createProject = async (projectData) => {
   const githubUrl = projectData.github_url || projectData.githubUrl;
   const liveUrl = projectData.live_url || projectData.liveUrl;
   const cohort = projectData.cohort;
-  const status = projectData.status || 'active';
+  // New projects default to draft so they stay hidden from the public site until published
+  const status = projectData.status || 'draft';
   const hasPartner = projectData.has_partner || projectData.hasPartner || false;
   const partnerName = projectData.partner_name || projectData.partnerName;
   const partnerLogoUrl = projectData.partner_logo_url || projectData.partnerLogoUrl;
@@ -465,10 +488,14 @@ const getAllSectors = async () => {
 
 const getAllCohorts = async () => {
   const query = `
-    SELECT DISTINCT cohort
-    FROM lookbook_projects
-    WHERE cohort IS NOT NULL AND status = 'active'
-    ORDER BY cohort DESC
+    SELECT DISTINCT p.cohort
+    FROM lookbook_projects p
+    WHERE p.cohort IS NOT NULL AND p.status = 'active'
+      AND NOT EXISTS (
+        SELECT 1 FROM lookbook_initiatives li
+        WHERE li.cohort_value = p.cohort AND li.is_active = false
+      )
+    ORDER BY p.cohort DESC
   `;
   
   const result = await pool.query(query);

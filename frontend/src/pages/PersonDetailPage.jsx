@@ -3,6 +3,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { profilesAPI, projectsAPI, initiativesAPI, getImageUrl } from '../utils/api';
 import analytics from '../utils/analytics';
 import { useLoadingProgress } from '../contexts/LoadingProgressContext';
+import { useAuth } from '../contexts/AuthContext';
 import LazyVideo from '../components/LazyVideo';
 import ProjectCardSkeleton from '../components/ProjectCardSkeleton';
 import PersonCardSkeleton from '../components/PersonCardSkeleton';
@@ -20,23 +21,6 @@ import { Linkedin, Globe, Camera, Code, Rocket, Zap, Lightbulb, Target, Square, 
 import ContactModal from '../components/ContactModal';
 import AmbassadorCard from '../components/AmbassadorCard';
 import AmbassadorDetailView from '../components/AmbassadorDetailView';
-
-// Custom hook for debounced value
-const useDebounce = (value, delay) => {
-  const [debouncedValue, setDebouncedValue] = useState(value);
-
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      setDebouncedValue(value);
-    }, delay);
-
-    return () => {
-      clearTimeout(handler);
-    };
-  }, [value, delay]);
-
-  return debouncedValue;
-};
 
 // Helper function to adjust color brightness for gradients
 const adjustColor = (hex, percent) => {
@@ -772,6 +756,7 @@ function PersonDetailPage() {
   const { slug, filterSlug } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const { isAuthenticated: isAdminLoggedIn } = useAuth();
   
   // Check route shape. Project and People filters use different data sources.
   const isFilterUrl = location.pathname.startsWith('/projects/filter/');
@@ -783,6 +768,7 @@ function PersonDetailPage() {
   const [project, setProject] = useState(null);
   const [loading, setLoading] = useState(true);
   const [gridListLoading, setGridListLoading] = useState(true); // Loading state for grid/list views
+  const [isRefreshing, setIsRefreshing] = useState(false); // Refetching while cached data is still on screen
   const [loadingMore, setLoadingMore] = useState(false); // Loading state for progressive loading of additional projects
   const [slowLoadWarning, setSlowLoadWarning] = useState(false); // True after 5s of loading (cold start feedback)
   const [error, setError] = useState(null);
@@ -914,7 +900,11 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
   );
   const isUftPeopleMode = viewMode === 'people' && selectedPeopleGroup === PEOPLE_GROUP_UFT;
   const projectInitiatives = useMemo(
-    () => initiatives.filter(initiative => initiative.slug !== PEOPLE_GROUP_UFT),
+    // Hide initiatives with no published (active) projects — draft-only initiatives
+    // shouldn't appear in the public sidebar
+    () => initiatives.filter(initiative =>
+      initiative.slug !== PEOPLE_GROUP_UFT && Number(initiative.project_count) > 0
+    ),
     [initiatives]
   );
   const uftInitiative = useMemo(
@@ -922,9 +912,19 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
     [initiatives]
   );
 
-  // Debounce search terms to reduce API calls (500ms feels more responsive)
-  const debouncedPeopleSearch = useDebounce(peopleFilters.search, 500);
-  const debouncedProjectSearch = useDebounce(projectFilters.search, 500);
+  // Search is commit-based (Enter key), so no debounce is needed — applying it
+  // immediately avoids a dead delay between committing a search and fetching.
+  const debouncedPeopleSearch = peopleFilters.search;
+  const debouncedProjectSearch = projectFilters.search;
+
+  // Derive the cohort value for the selected initiative. Using this scalar as an
+  // effect dependency (instead of the `initiatives` array) prevents the main data
+  // fetch from aborting and restarting when the initiatives list loads.
+  const selectedCohortFilter = useMemo(
+    () => (selectedInitiative ? initiatives.find(i => i.slug === selectedInitiative)?.cohort_value : undefined),
+    [selectedInitiative, initiatives]
+  );
+  const initiativesLoaded = initiatives.length > 0;
 
   // Memoize filter arrays to prevent unnecessary re-renders
   // This creates stable references that only change when the actual values change
@@ -1211,6 +1211,17 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
       let slowLoadTimer = null;
       let progressBarActive = false;
 
+      // On initiative-filtered project routes, wait for initiatives to load so we
+      // can resolve the cohort before fetching. Otherwise we briefly fetch the
+      // unfiltered projects list, then refetch with cohort once initiatives resolve.
+      if (
+        viewMode === 'projects' &&
+        !initiativesLoaded &&
+        (selectedInitiative || isFilterUrl)
+      ) {
+        return;
+      }
+
       // Only show loading spinner when we have no data to display (avoids flicker when switching tabs)
       const hasCachedData =
         (viewMode === 'people' && (isUftPeopleMode ? ambassadorProjects.length > 0 : allProfiles.length > 0)) ||
@@ -1224,6 +1235,10 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
           startLoading();
           setLoadingProgress(10); // Start at 10%
           slowLoadTimer = setTimeout(() => setSlowLoadWarning(true), 5000);
+        } else if (isMounted) {
+          // Keep showing the existing results, but dim them so the user can tell
+          // a refresh is in progress instead of the new data snapping in silently.
+          setIsRefreshing(true);
         }
       }
       
@@ -1272,6 +1287,7 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
               setSlowLoadWarning(false);
               setGridListLoading(false);
               setPaginationPending(false);
+              setIsRefreshing(false);
               isFetchingRef.current = false;
             }
           }
@@ -1293,6 +1309,7 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
               setSlowLoadWarning(false);
               setGridListLoading(false);
               setPaginationPending(false);
+              setIsRefreshing(false);
               isFetchingRef.current = false;
             }
             return;
@@ -1342,16 +1359,14 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
               setSlowLoadWarning(false);
               setGridListLoading(false);
               setPaginationPending(false);
+              setIsRefreshing(false);
               isFetchingRef.current = false;
             }
           }
         } else if (viewMode === 'projects') {
           try {
             setLoadingProgress(30);
-            // Get cohort value from selected initiative for filtering
-            const cohortFilter = selectedInitiative
-              ? initiatives.find(i => i.slug === selectedInitiative)?.cohort_value
-              : undefined;
+            const cohortFilter = selectedCohortFilter;
             // Use progressive loading for initiative filters to show results faster
             const useProgressiveLoading = (isFilterUrl || selectedInitiative) && !shouldPaginate;
 
@@ -1381,6 +1396,7 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
                   setSlowLoadWarning(false);
                   setGridListLoading(false); // Stop main loading spinner
                   setPaginationPending(false);
+                  setIsRefreshing(false);
                   completeLoading();
                 }
 
@@ -1479,6 +1495,7 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
               setSlowLoadWarning(false);
               setGridListLoading(false);
               setPaginationPending(false);
+              setIsRefreshing(false);
               isFetchingRef.current = false;
             }
           }
@@ -1521,6 +1538,7 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
               setSlowLoadWarning(false);
               setGridListLoading(false);
               setPaginationPending(false);
+              setIsRefreshing(false);
               isFetchingRef.current = false;
             }
           }
@@ -1561,16 +1579,14 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
               setSlowLoadWarning(false);
               setGridListLoading(false);
               setPaginationPending(false);
+              setIsRefreshing(false);
               isFetchingRef.current = false;
             }
           }
         } else if (viewMode === 'projects') {
           try {
             setLoadingProgress(30);
-            // Get cohort value from selected initiative for filtering
-            const cohortFilter = selectedInitiative
-              ? initiatives.find(i => i.slug === selectedInitiative)?.cohort_value
-              : undefined;
+            const cohortFilter = selectedCohortFilter;
             const response = await projectsAPI.getAll({
               limit: 100,
               search: debouncedProjectSearch,
@@ -1602,6 +1618,7 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
               setSlowLoadWarning(false);
               setGridListLoading(false);
               setPaginationPending(false);
+              setIsRefreshing(false);
               isFetchingRef.current = false;
             }
           }
@@ -1620,7 +1637,10 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
         abortControllerRef.current.abort();
       }
     };
-  }, [gridPage, viewMode, debouncedPeopleSearch, debouncedProjectSearch, peopleSkillsFilter, peopleIndustriesFilter, peopleFilters.openToWork, projectSkillsFilter, projectSectorsFilter, layoutView, selectedInitiative, selectedPeopleGroup, isUftPeopleMode, initiatives]);
+  // Note: depends on the derived `selectedCohortFilter` / `initiativesLoaded` scalars rather than
+  // the `initiatives` array itself, so the fetch isn't aborted and restarted every time the
+  // initiatives list resolves with a new array identity.
+  }, [gridPage, viewMode, debouncedPeopleSearch, debouncedProjectSearch, peopleSkillsFilter, peopleIndustriesFilter, peopleFilters.openToWork, projectSkillsFilter, projectSectorsFilter, layoutView, selectedInitiative, selectedPeopleGroup, isUftPeopleMode, selectedCohortFilter, initiativesLoaded]);
 
   // Fetch filters and initiatives once on mount - these are cached
   useEffect(() => {
@@ -1640,7 +1660,9 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
         const [peopleFiltersData, projectFiltersData, initiativesData] = await Promise.all([
           profilesAPI.getFilters(),
           projectsAPI.getFilters(),
-          initiativesAPI.getAll()
+          // Admins bypass the 10-min HTTP cache so publish/unpublish reflects in
+          // the sidebar immediately; public visitors keep the cached response.
+          initiativesAPI.getAll(false, { fresh: isAdminLoggedIn })
         ]);
         
         if (peopleFiltersData && peopleFiltersData.success) {
@@ -1694,10 +1716,23 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
     }
 
     const matchingInitiative = initiatives.find(i => i.slug === filterSlug);
+
+    // Initiatives with no published projects (e.g. draft-only) have no public filter
+    // page — send visitors back to the main projects grid.
+    if (
+      initiatives.length > 0 &&
+      filterSlug !== PEOPLE_GROUP_UFT &&
+      matchingInitiative &&
+      Number(matchingInitiative.project_count) === 0
+    ) {
+      navigate('/projects', { replace: true });
+      return;
+    }
+
     if (matchingInitiative && selectedInitiative !== matchingInitiative.slug) {
       setSelectedInitiative(matchingInitiative.slug);
     }
-  }, [filterSlug, initiatives, selectedInitiative, viewMode]);
+  }, [filterSlug, initiatives, selectedInitiative, viewMode, navigate]);
 
   // UFT ambassadors live under People — redirect legacy Projects filter URLs
   useEffect(() => {
@@ -2153,42 +2188,26 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
               return;
             }
             
-            // Check if current project is in the fetched list
-            const currentProjectInList = projects.some(p => p.slug === slug);
-            
-            if (currentProjectInList) {
-              // Project is in the list, set it and update index
-              setProject(project);
+            // We successfully fetched the requested project, so always display it —
+            // even when it's absent from the public navigation list (e.g. a draft
+            // being previewed by an admin, or a project outside the active cohort
+            // filter). The list only drives prev/next paging, so a missing entry
+            // just falls back to index -1 (paging disabled) instead of silently
+            // redirecting to a different project.
+            setProject(project);
             setPerson(null);
-            
+
             // Track project view
             analytics.projectViewed(
-                project.slug,
-                project.title,
-                project.skills || [],
-                project.sectors || []
-              );
-              
-              // Find current index in the list
+              project.slug,
+              project.title,
+              project.skills || [],
+              project.sectors || []
+            );
+
             const index = projects.findIndex(p => p.slug === slug);
-              setCurrentIndex(index >= 0 ? index : -1);
+            setCurrentIndex(index >= 0 ? index : -1);
             setError(null);
-            } else if (projects.length > 0) {
-              // Project not in list but list has items - navigate to first in list
-              // This will trigger a re-fetch with the new slug
-              setProject(null);
-              setPerson(null);
-              setCurrentIndex(-1);
-              setError(null);
-              navigate(`/projects/${projects[0].slug}`);
-              return; // Don't set error, navigation will handle it
-          } else {
-              // No results - clear project to show "no results" message
-              setProject(null);
-              setPerson(null);
-              setCurrentIndex(-1);
-              setError(null); // Clear error so "no results" message shows instead of "Not found"
-            }
           } else {
             // Project fetch failed - check if it's because of filters or actual error
             if (projects.length === 0) {
@@ -3574,7 +3593,10 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                     className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-[18px] mb-0" 
                     style={{
                       gridAutoRows: 'auto',
-                      overflow: 'visible'
+                      overflow: 'visible',
+                      opacity: isRefreshing ? 0.5 : 1,
+                      pointerEvents: isRefreshing ? 'none' : 'auto',
+                      transition: 'opacity 0.2s ease'
                     }}
                   >
                       {/* In grid view, apply client-side filters */}
@@ -3716,7 +3738,10 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                     className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-[18px] mb-0" 
                     style={{
                       gridAutoRows: 'auto',
-                      overflow: 'visible'
+                      overflow: 'visible',
+                      opacity: isRefreshing ? 0.5 : 1,
+                      pointerEvents: isRefreshing ? 'none' : 'auto',
+                      transition: 'opacity 0.2s ease'
                     }}
                   >
                     {/* In grid view, apply client-side filters */}
@@ -3813,6 +3838,9 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
             <Card className="rounded-xl border-2 border-white shadow-none mb-12" style={{
               backgroundColor: 'white',
               animation: 'fadeInList 0.3s ease-in-out',
+              opacity: isRefreshing ? 0.5 : 1,
+              pointerEvents: isRefreshing ? 'none' : 'auto',
+              transition: 'opacity 0.2s ease',
             }}>
               <CardContent className="p-6">
                 {viewMode === 'projects' && (
@@ -4445,6 +4473,15 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
               {/* Project View — Standard (ambassadors redirect to /people/uft/:slug) */}
               {viewMode === 'projects' && project && (
               <>
+              {/* Draft preview banner — only admins can load draft projects */}
+              {isAdminLoggedIn && project.status === 'draft' && (
+                <div className="mb-4 flex items-center gap-2 px-4 py-2.5 rounded-lg bg-amber-50 border border-amber-200">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-amber-700 bg-amber-100 px-2 py-0.5 rounded">Draft</span>
+                  <span className="text-sm text-amber-800">
+                    This project is a draft preview — it is not visible on the public site until published.
+                  </span>
+                </div>
+              )}
               <div className="mb-6">
                 {/* Project Info */}
                 <div className="mb-6">

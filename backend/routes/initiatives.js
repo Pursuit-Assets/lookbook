@@ -34,7 +34,22 @@ function setInitiativesCacheHeaders(res, includeInactive) {
     return;
   }
 
-  res.set('Cache-Control', 'public, max-age=600');
+  // The public list carries each initiative's live `project_count`, which changes
+  // whenever a project is published/unpublished and drives sidebar visibility.
+  // Use revalidation (cheap 304s via ETag) instead of a hard 10-min cache so
+  // publish/unpublish reflects immediately rather than lagging up to 10 minutes.
+  res.set('Cache-Control', 'no-cache');
+}
+
+// Changing an initiative's visibility (is_active), creating, or deleting one
+// affects which projects appear publicly, so the project cache must also be
+// invalidated. Required lazily to avoid a circular dependency with projects.js.
+function clearProjectCache() {
+  try {
+    require('./projects').clearProjectCache();
+  } catch (err) {
+    console.warn('Could not clear project cache from initiatives route:', err.message);
+  }
 }
 
 // Helper to generate slug from name
@@ -115,8 +130,9 @@ router.get('/:slug', async (req, res) => {
     
     // Get project count
     const projectCount = await initiativeQueries.getProjectCountByInitiative(initiative.cohort_value);
-    
-    res.set('Cache-Control', 'public, max-age=600');
+
+    // project_count changes on publish/unpublish — revalidate instead of hard-caching.
+    res.set('Cache-Control', 'no-cache');
     res.json({
       success: true,
       data: {
@@ -162,6 +178,7 @@ router.post('/', async (req, res) => {
     
     // Clear cache when initiative is created
     initiativeCache.clear();
+    clearProjectCache();
     
     res.status(201).json({
       success: true,
@@ -208,8 +225,10 @@ router.put('/:id', async (req, res) => {
       });
     }
     
-    // Clear cache when initiative is updated
+    // Clear cache when initiative is updated (visibility toggle changes which
+    // projects are public, so invalidate the project cache too).
     initiativeCache.clear();
+    clearProjectCache();
     
     res.json({
       success: true,
@@ -251,6 +270,7 @@ router.delete('/:id', async (req, res) => {
     
     // Clear cache when initiative is deleted
     initiativeCache.clear();
+    clearProjectCache();
     
     res.json({
       success: true,
@@ -265,5 +285,12 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+// Allow other routes (e.g. project publish/unpublish) to invalidate the
+// initiative cache so project_count reflects status changes immediately.
+function clearInitiativeCache() {
+  initiativeCache.clear();
+}
+
 module.exports = router;
+module.exports.clearInitiativeCache = clearInitiativeCache;
 

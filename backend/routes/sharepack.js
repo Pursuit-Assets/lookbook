@@ -26,9 +26,10 @@ router.post('/', async (req, res) => {
       projectSlugs.map(slug => projectQueries.getProjectBySlug(slug))
     );
     
-    // Filter out nulls
+    // Filter out nulls and non-published projects (drafts/archived must not leak into PDFs).
+    // A hidden initiative also suppresses its projects, overriding their own status.
     const validProfiles = profiles.filter(p => p !== null);
-    const validProjects = projects.filter(p => p !== null);
+    const validProjects = projects.filter(p => p !== null && p.status === 'active' && !p.initiative_hidden);
     
     // Create PDF
     const pdfDoc = await PDFDocument.create();

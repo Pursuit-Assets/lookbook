@@ -451,7 +451,8 @@ function ProjectsBulkUpload({ results, setResults, errors, setErrors }) {
         const row = data[i];
         try {
           const projectData = processProjectRow(row);
-          await projectsAPI.create(projectData);
+          // Bulk-uploaded projects start as drafts so they can be reviewed before publishing
+          await projectsAPI.create({ ...projectData, status: 'draft' });
           successResults.push({ row: i + 1, name: projectData.title });
         } catch (error) {
           const errorMessage = error.response?.data?.error || error.message || 'Unknown error';

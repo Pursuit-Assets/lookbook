@@ -11,6 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Save, ArrowLeft, Plus, X, Upload, Link as LinkIcon, Eye, Edit3, ExternalLink, Github, Rocket } from 'lucide-react';
+import ConfirmDialog from '../components/ConfirmDialog';
 
 function AdminProjectEditPage() {
   const { slug } = useParams();
@@ -50,7 +51,8 @@ function AdminProjectEditPage() {
     has_partner: false,
     partner_name: '',
     partner_logo_url: '',
-    cohort: '' // Initiative cohort value
+    cohort: '', // Initiative cohort value
+    status: 'draft' // New projects start as drafts until explicitly published
   });
 
   const [skillInput, setSkillInput] = useState('');
@@ -61,6 +63,8 @@ function AdminProjectEditPage() {
   const [iconInputMode, setIconInputMode] = useState('url'); // 'url' or 'upload'
   const [partnerLogoInputMode, setPartnerLogoInputMode] = useState('url'); // 'url' or 'upload'
   const [editMode, setEditMode] = useState('form'); // 'form' or 'wysiwyg'
+  const [publishDialogOpen, setPublishDialogOpen] = useState(false);
+  const [publishing, setPublishing] = useState(false);
 
   // Helper function to adjust color brightness for gradients
   const adjustColor = (hex, percent) => {
@@ -405,7 +409,8 @@ function AdminProjectEditPage() {
         has_partner: project.has_partner || false,
         partner_name: project.partner_name || '',
         partner_logo_url: project.partner_logo_url || '',
-        cohort: project.cohort || ''
+        cohort: project.cohort || '',
+        status: project.status || 'active'
       });
     } catch (error) {
       console.error('Error fetching project:', error);
@@ -441,6 +446,43 @@ function AdminProjectEditPage() {
       });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handlePublish = async () => {
+    setPublishing(true);
+    try {
+      await projectsAPI.publish(slug);
+      setFormData(prev => ({ ...prev, status: 'active' }));
+      toast.success('Project published!', {
+        description: `${formData.title} is now visible on the public site.`
+      });
+    } catch (error) {
+      console.error('Error publishing project:', error);
+      toast.error('Failed to publish project', {
+        description: error.message || 'An error occurred. Please try again.'
+      });
+    } finally {
+      setPublishing(false);
+      setPublishDialogOpen(false);
+    }
+  };
+
+  const handleUnpublish = async () => {
+    setPublishing(true);
+    try {
+      await projectsAPI.unpublish(slug);
+      setFormData(prev => ({ ...prev, status: 'draft' }));
+      toast.success('Project moved to draft', {
+        description: `${formData.title} is now hidden from the public site.`
+      });
+    } catch (error) {
+      console.error('Error unpublishing project:', error);
+      toast.error('Failed to unpublish project', {
+        description: error.message || 'An error occurred. Please try again.'
+      });
+    } finally {
+      setPublishing(false);
     }
   };
 
@@ -580,11 +622,22 @@ function AdminProjectEditPage() {
             Back to Projects
           </Button>
           <div className="flex items-center justify-between">
-            <h1 className="text-3xl font-bold text-gray-900">
-              {isNew ? 'Add New Project' : `Edit ${formData.title}`}
-            </h1>
-            {/* Edit Mode Toggle */}
-            <div className="flex gap-2">
+            <div className="flex items-center gap-3 min-w-0">
+              <h1 className="text-3xl font-bold text-gray-900 truncate">
+                {isNew ? 'Add New Project' : `Edit ${formData.title}`}
+              </h1>
+              {formData.status === 'draft' ? (
+                <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 border-0 shrink-0">
+                  Draft
+                </Badge>
+              ) : (
+                <Badge className="bg-green-100 text-green-800 hover:bg-green-100 border-0 shrink-0">
+                  Published
+                </Badge>
+              )}
+            </div>
+            {/* Edit Mode Toggle + Publish */}
+            <div className="flex gap-2 shrink-0">
               <Button
                 type="button"
                 variant={editMode === 'form' ? 'default' : 'outline'}
@@ -605,6 +658,30 @@ function AdminProjectEditPage() {
                 <Eye className="w-4 h-4" />
                 WYSIWYG Mode
               </Button>
+              {!isNew && formData.status === 'draft' && (
+                <Button
+                  type="button"
+                  onClick={() => setPublishDialogOpen(true)}
+                  disabled={publishing}
+                  className="flex items-center gap-2 text-white"
+                  style={{backgroundColor: '#16a34a'}}
+                >
+                  <Rocket className="w-4 h-4" />
+                  {publishing ? 'Publishing...' : 'Publish'}
+                </Button>
+              )}
+              {!isNew && formData.status === 'active' && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleUnpublish}
+                  disabled={publishing}
+                  className="flex items-center gap-2 border border-gray-300 hover:bg-gray-50"
+                  style={{ backgroundColor: 'white', color: '#374151' }}
+                >
+                  {publishing ? 'Working...' : 'Unpublish'}
+                </Button>
+              )}
             </div>
           </div>
         </div>
@@ -1872,6 +1949,14 @@ function AdminProjectEditPage() {
             </>
           )}
         </form>
+
+        <ConfirmDialog
+          isOpen={publishDialogOpen}
+          onClose={() => setPublishDialogOpen(false)}
+          onConfirm={handlePublish}
+          confirmLabel="Publish"
+          message={`Publish "${formData.title}"? It will appear on the public site, home page, and initiative filters.`}
+        />
       </div>
     </AdminLayout>
   );
