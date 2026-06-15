@@ -47,6 +47,8 @@ router.post('/', async (req, res) => {
         search: q,
         skills: skills || undefined,
         sectors: sectors || undefined,
+        // Public search must never surface projects from hidden initiatives.
+        excludeHiddenInitiatives: true,
         limit: type === 'all' ? Math.floor(limit / 2) : limit
       };
       

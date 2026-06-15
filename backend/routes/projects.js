@@ -6,6 +6,8 @@ const router = express.Router();
 const projectQueries = require('../queries/projectQueries');
 const { pool } = require('../db/dbConfig');
 const { processBase64Image, isBase64Image } = require('../utils/imageConverter');
+const { verifyAdminToken, isAdminRequest } = require('./auth');
+const { clearInitiativeCache } = require('./initiatives');
 
 // Simple in-memory cache for projects (to reduce database load)
 const projectCache = new Map();
@@ -20,6 +22,7 @@ function getCacheKey(filters) {
     excludeAmbassadors: filters.excludeAmbassadors || false,
     hasDemoVideo: filters.hasDemoVideo,
     status: filters.status || 'active',
+    excludeHiddenInitiatives: filters.excludeHiddenInitiatives || false,
     limit: filters.limit || 50,
     offset: filters.offset || 0,
     includeParticipants: filters.includeParticipants || false
@@ -90,7 +93,15 @@ router.get('/', async (req, res) => {
     // Parse filters
     // includeParticipants defaults to false for performance (only include when explicitly requested)
     const includeParticipants = req.query.includeParticipants === 'true';
-    
+
+    // Only admins may see non-active projects (drafts/archived).
+    // Public callers always get status='active' regardless of what they request.
+    const requestedStatus = status || 'active';
+    const admin = isAdminRequest(req);
+    const effectiveStatus = requestedStatus !== 'active' && !admin
+      ? 'active'
+      : requestedStatus;
+
     const filters = {
       search,
       skills: skills ? (Array.isArray(skills) ? skills : skills.split(',')) : undefined,
@@ -98,7 +109,10 @@ router.get('/', async (req, res) => {
       cohort,
       excludeAmbassadors: excludeAmbassadors === 'true' || excludeAmbassadors === true,
       hasDemoVideo: hasDemoVideo === 'true' ? true : hasDemoVideo === 'false' ? false : undefined,
-      status: status || 'active',
+      status: effectiveStatus,
+      // Public callers never see projects belonging to a hidden initiative.
+      // Admins bypass so drafts/previews stay visible in admin tooling.
+      excludeHiddenInitiatives: !admin,
       limit: parseInt(limit) || 50,
       offset: page ? (parseInt(page) - 1) * (parseInt(limit) || 50) : parseInt(offset) || 0,
       includeParticipants // Only include participants when explicitly requested (for detail views)
@@ -231,8 +245,12 @@ router.get('/:slug', async (req, res) => {
   try {
     const { slug } = req.params;
     const project = await projectQueries.getProjectBySlug(slug);
-    
-    if (!project) {
+    const admin = isAdminRequest(req);
+
+    // Non-active (draft/archived) projects, and any project whose initiative is
+    // hidden, are only visible to admins. A hidden initiative overrides the
+    // project's own (active) status for public visitors.
+    if (!project || ((project.status !== 'active' || project.initiative_hidden) && !admin)) {
       return res.status(404).json({ 
         success: false,
         error: 'Project not found' 
@@ -325,6 +343,7 @@ router.post('/', async (req, res) => {
 
     // Invalidate server-side list cache
     projectCache.clear();
+    clearInitiativeCache();
 
     res.status(201).json({
       success: true,
@@ -474,6 +493,7 @@ router.put('/:slug', async (req, res) => {
 
     // Invalidate server-side list cache so stale data isn't served
     projectCache.clear();
+    clearInitiativeCache();
 
     res.json({
       success: true,
@@ -486,6 +506,76 @@ router.put('/:slug', async (req, res) => {
       success: false,
       error: 'Failed to update project',
       message: error.message 
+    });
+  }
+});
+
+// =====================================================
+// POST /api/projects/:slug/publish
+// Publish a draft project (set status to active) - admin only
+// =====================================================
+
+router.post('/:slug/publish', verifyAdminToken, async (req, res) => {
+  try {
+    const { slug } = req.params;
+    const updatedProject = await projectQueries.updateProject(slug, { status: 'active' });
+
+    if (!updatedProject) {
+      return res.status(404).json({
+        success: false,
+        error: 'Project not found'
+      });
+    }
+
+    projectCache.clear();
+    clearInitiativeCache();
+
+    res.json({
+      success: true,
+      data: updatedProject,
+      message: 'Project published successfully'
+    });
+  } catch (error) {
+    console.error('Error publishing project:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to publish project',
+      message: error.message
+    });
+  }
+});
+
+// =====================================================
+// POST /api/projects/:slug/unpublish
+// Move a published project back to draft - admin only
+// =====================================================
+
+router.post('/:slug/unpublish', verifyAdminToken, async (req, res) => {
+  try {
+    const { slug } = req.params;
+    const updatedProject = await projectQueries.updateProject(slug, { status: 'draft' });
+
+    if (!updatedProject) {
+      return res.status(404).json({
+        success: false,
+        error: 'Project not found'
+      });
+    }
+
+    projectCache.clear();
+    clearInitiativeCache();
+
+    res.json({
+      success: true,
+      data: updatedProject,
+      message: 'Project moved back to draft'
+    });
+  } catch (error) {
+    console.error('Error unpublishing project:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to unpublish project',
+      message: error.message
     });
   }
 });
@@ -514,6 +604,9 @@ router.delete('/by-id/:id', async (req, res) => {
         error: 'Project not found'
       });
     }
+
+    projectCache.clear();
+    clearInitiativeCache();
 
     res.json({
       success: true,
@@ -546,6 +639,9 @@ router.delete('/:slug', async (req, res) => {
         error: 'Project not found' 
       });
     }
+
+    projectCache.clear();
+    clearInitiativeCache();
     
     res.json({
       success: true,
@@ -658,5 +754,8 @@ router.delete('/:slug/participants/:profileSlug', async (req, res) => {
 });
 
 module.exports = router;
+// Allow other routes (e.g. initiative visibility toggles) to invalidate the
+// project cache so hidden/shown initiatives reflect in project listings.
+module.exports.clearProjectCache = invalidateProjectCache;
 
 

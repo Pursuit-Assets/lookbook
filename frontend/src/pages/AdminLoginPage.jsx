@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,6 +10,7 @@ import { useAuth } from '../contexts/AuthContext';
 
 function AdminLoginPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { login } = useAuth();
   const [credentials, setCredentials] = useState({
     username: '',
@@ -17,6 +18,16 @@ function AdminLoginPage() {
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const expired = searchParams.get('expired') === '1';
+  const redirectParam = searchParams.get('redirect');
+
+  // Surface a clear message when the user was bounced here by an expired session.
+  useEffect(() => {
+    if (expired) {
+      setError('Your session expired. Please sign in again.');
+    }
+  }, [expired]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -29,7 +40,11 @@ function AdminLoginPage() {
         toast.success('Welcome back!', {
           description: 'Successfully logged in to admin portal'
         });
-        navigate('/admin');
+        // Return the user to where they were bounced from, if it's a safe in-app path.
+        const safeRedirect = redirectParam && redirectParam.startsWith('/') && !redirectParam.startsWith('//')
+          ? decodeURIComponent(redirectParam)
+          : '/admin';
+        navigate(safeRedirect);
       } else {
         setError('Invalid username or password');
         toast.error('Login failed', {

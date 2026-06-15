@@ -16,6 +16,7 @@ function AdminProjectsPage() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedInitiative, setSelectedInitiative] = useState(null);
+  const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'draft' | 'active'
   const [initiatives, setInitiatives] = useState([]);
   const [deleteDialog, setDeleteDialog] = useState({ isOpen: false, project: null });
   const prevLocationKeyRef = useRef(null);
@@ -78,7 +79,8 @@ function AdminProjectsPage() {
   const fetchProjects = async () => {
     try {
       setLoading(true);
-      const filters = { limit: 100 };
+      // status 'all' lets admins see drafts alongside published projects
+      const filters = { limit: 100, status: 'all' };
       
       // Add cohort filter if an initiative is selected
       if (selectedInitiative) {
@@ -105,10 +107,14 @@ function AdminProjectsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedInitiative]);
 
-  const filteredProjects = projects.filter(project =>
-    project.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    project.summary?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredProjects = projects.filter(project => {
+    const matchesSearch =
+      project.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      project.summary?.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesStatus =
+      statusFilter === 'all' || (project.status || 'active') === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
 
   const handleDeleteClick = (project) => {
     setDeleteDialog({ isOpen: true, project });
@@ -187,6 +193,29 @@ function AdminProjectsPage() {
           </div>
         )}
 
+        {/* Status Filter */}
+        <div className="mb-6">
+          <h3 className="text-sm font-medium text-gray-700 mb-3">Filter by Status</h3>
+          <div className="flex flex-wrap gap-2">
+            {[
+              { value: 'all', label: 'All' },
+              { value: 'draft', label: 'Draft' },
+              { value: 'active', label: 'Published' }
+            ].map(option => (
+              <Button
+                key={option.value}
+                variant={statusFilter === option.value ? "default" : "outline"}
+                size="sm"
+                onClick={() => setStatusFilter(option.value)}
+                style={statusFilter === option.value ? {backgroundColor: '#4242ea', color: 'white'} : {}}
+                className={statusFilter === option.value ? '' : 'bg-white hover:bg-gray-50'}
+              >
+                {option.label}
+              </Button>
+            ))}
+          </div>
+        </div>
+
         {/* Search */}
         <div className="mb-6">
           <div className="relative">
@@ -241,6 +270,9 @@ function AdminProjectsPage() {
                     Project
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Status
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Initiative
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -271,6 +303,21 @@ function AdminProjectsPage() {
                             {project.short_description || project.summary}
                           </div>
                         </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        {(project.status || 'active') === 'draft' ? (
+                          <Badge className="text-xs bg-amber-100 text-amber-800 hover:bg-amber-100 border-0">
+                            Draft
+                          </Badge>
+                        ) : project.status === 'archived' ? (
+                          <Badge className="text-xs bg-gray-100 text-gray-600 hover:bg-gray-100 border-0">
+                            Archived
+                          </Badge>
+                        ) : (
+                          <Badge className="text-xs bg-green-100 text-green-800 hover:bg-green-100 border-0">
+                            Published
+                          </Badge>
+                        )}
                       </td>
                       <td className="px-6 py-4">
                         {projectInitiative ? (
@@ -319,7 +366,11 @@ function AdminProjectsPage() {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center justify-end gap-2">
-                          <Link to={`/projects/${project.slug}`} target="_blank">
+                          <Link
+                            to={`/projects/${project.slug}`}
+                            target="_blank"
+                            title={project.status === 'draft' ? 'Preview (draft)' : 'View'}
+                          >
                             <Button variant="ghost" size="sm">
                               <Eye className="w-4 h-4" />
                             </Button>
