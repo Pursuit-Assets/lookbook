@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Users, Briefcase, Home, Upload, LogOut, Tags, Rocket } from 'lucide-react';
+import { Users, Briefcase, Home, Upload, LogOut, Tags, Rocket, Menu, X } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 function AdminLayout({ children }) {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
   const { logout, user } = useAuth();
@@ -16,28 +18,55 @@ function AdminLayout({ children }) {
     navigate('/admin/login');
   };
 
+  const closeSidebar = () => setSidebarOpen(false);
+
   return (
     <div className="flex min-h-screen bg-gray-50">
+      {/* Mobile hamburger button */}
+      <button
+        className="fixed top-4 left-4 z-50 lg:hidden p-2 rounded-md bg-white border border-gray-200 shadow-sm"
+        onClick={() => setSidebarOpen(true)}
+        aria-label="Open menu"
+      >
+        <Menu className="w-5 h-5 text-gray-700" />
+      </button>
+
+      {/* Overlay backdrop (mobile only) */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-30 lg:hidden"
+          onClick={closeSidebar}
+        />
+      )}
+
       {/* Sidebar */}
-      <aside className="w-64 bg-white border-r border-gray-200 fixed h-full">
+      <aside className={`w-64 bg-white border-r border-gray-200 fixed h-full z-40 transform transition-transform duration-300 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}>
         <div className="p-6">
           {/* Logo */}
           <div className="flex items-center gap-3 mb-8">
-            <img 
-              src="/pursuit-wordmark.png" 
-              alt="Pursuit" 
+            <img
+              src="/pursuit-wordmark.png"
+              alt="Pursuit"
               className="h-8"
             />
-            <div>
+            <div className="flex-1">
               <div className="font-semibold text-base">Lookbook</div>
               <div className="text-xs text-gray-500">Admin</div>
             </div>
+            <button
+              className="lg:hidden p-1 rounded-md hover:bg-gray-100"
+              onClick={closeSidebar}
+              aria-label="Close menu"
+            >
+              <X className="w-5 h-5 text-gray-500" />
+            </button>
           </div>
 
           {/* Navigation */}
           <nav className="space-y-1">
             <Link
               to="/admin"
+              onClick={closeSidebar}
               className={`flex items-center gap-3 px-3 py-2 rounded-md transition-colors ${
                 location.pathname === '/admin'
                   ? 'bg-blue-50 text-blue-600 font-medium'
@@ -47,9 +76,10 @@ function AdminLayout({ children }) {
               <Home className="w-5 h-5" />
               <span>Dashboard</span>
             </Link>
-            
+
             <Link
               to="/admin/people"
+              onClick={closeSidebar}
               className={`flex items-center gap-3 px-3 py-2 rounded-md transition-colors ${
                 isActive('/admin/people')
                   ? 'bg-blue-50 text-blue-600 font-medium'
@@ -59,9 +89,10 @@ function AdminLayout({ children }) {
               <Users className="w-5 h-5" />
               <span>People</span>
             </Link>
-            
+
             <Link
               to="/admin/projects"
+              onClick={closeSidebar}
               className={`flex items-center gap-3 px-3 py-2 rounded-md transition-colors ${
                 isActive('/admin/projects')
                   ? 'bg-blue-50 text-blue-600 font-medium'
@@ -71,9 +102,10 @@ function AdminLayout({ children }) {
               <Briefcase className="w-5 h-5" />
               <span>Projects</span>
             </Link>
-            
+
             <Link
               to="/admin/initiatives"
+              onClick={closeSidebar}
               className={`flex items-center gap-3 px-3 py-2 rounded-md transition-colors ${
                 isActive('/admin/initiatives')
                   ? 'bg-blue-50 text-blue-600 font-medium'
@@ -83,9 +115,10 @@ function AdminLayout({ children }) {
               <Rocket className="w-5 h-5" />
               <span>Initiatives</span>
             </Link>
-            
+
             <Link
               to="/admin/taxonomy"
+              onClick={closeSidebar}
               className={`flex items-center gap-3 px-3 py-2 rounded-md transition-colors ${
                 isActive('/admin/taxonomy')
                   ? 'bg-blue-50 text-blue-600 font-medium'
@@ -95,9 +128,10 @@ function AdminLayout({ children }) {
               <Tags className="w-5 h-5" />
               <span>Skills & Industries</span>
             </Link>
-            
+
             <Link
               to="/admin/bulk-upload"
+              onClick={closeSidebar}
               className={`flex items-center gap-3 px-3 py-2 rounded-md transition-colors ${
                 isActive('/admin/bulk-upload')
                   ? 'bg-blue-50 text-blue-600 font-medium'
@@ -129,6 +163,7 @@ function AdminLayout({ children }) {
           <div className="p-4 space-y-2">
             <Link
               to="/people"
+              onClick={closeSidebar}
               className="flex items-center justify-center gap-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 transition-colors rounded-md hover:bg-gray-50"
             >
               ← Back to Public Site
@@ -146,7 +181,7 @@ function AdminLayout({ children }) {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 ml-64">
+      <main className="flex-1 lg:ml-64">
         <div className="p-8">
           {children}
         </div>
