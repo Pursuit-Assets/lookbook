@@ -2293,7 +2293,11 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
       const is4ColumnView = window.innerWidth >= 1536; // 2xl breakpoint
       // Use total count from API, not filtered array length (which may be paginated)
       const itemCount = viewMode === 'people' ? totalProfiles : totalProjects;
-      const isPerfect4x2 = layoutView === 'grid' && is4ColumnView && itemCount === 8;
+      // Only the paginated default grid renders a tidy 4x2 page that fits the viewport.
+      // Initiative/filter views are unpaginated and show every project, so an 8-item
+      // initiative would otherwise hide overflow and trap rows that exceed the viewport.
+      const isPaginatedGrid = !isFilterUrl && !selectedInitiative;
+      const isPerfect4x2 = layoutView === 'grid' && is4ColumnView && itemCount === 8 && isPaginatedGrid;
       
       // Apply synchronously before browser paints to prevent flash
       if (isPerfect4x2) {
@@ -2324,7 +2328,7 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
       document.body.style.overflowY = '';
       document.documentElement.style.overflowY = '';
     };
-  }, [layoutView, viewMode, totalProfiles, totalProjects]);
+  }, [layoutView, viewMode, totalProfiles, totalProjects, isFilterUrl, selectedInitiative]);
 
   // Prefetch adjacent items for instant navigation
   useEffect(() => {
