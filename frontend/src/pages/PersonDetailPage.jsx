@@ -892,6 +892,31 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
   
   // Initiative filter for projects (SMB Winter 2025, Demo Day Fall 2025, etc.)
   const [selectedInitiative, setSelectedInitiative] = useState(null);
+
+  // Project detail URLs are flat (`/projects/:slug`) and can't carry the active
+  // initiative in the path. We persist it as an `?initiative=` query param so that
+  // paging into a project keeps the list scoped to that initiative and keeps the
+  // sidebar entry highlighted (instead of falling back to the full project list).
+  const initiativeParam = useMemo(
+    () => new URLSearchParams(location.search).get('initiative') || null,
+    [location.search]
+  );
+  // `withInitiativeParam` is captured by memoized project cards whose `onClick` is
+  // frozen at first render (their comparator only diffs `proj`). If this read
+  // `selectedInitiative` directly, those stale closures would append the value from
+  // the initial render — `null` before the initiative syncs from the URL — and drop
+  // the `?initiative=` param. Reading from a ref keeps a single stable function that
+  // always sees the live initiative, so paging/cards stay scoped to it.
+  const selectedInitiativeRef = useRef(null);
+  const withInitiativeParam = useCallback((path) => {
+    const initiative = selectedInitiativeRef.current;
+    return initiative
+      ? `${path}?initiative=${encodeURIComponent(initiative)}`
+      : path;
+  }, []);
+  // Keep the ref current every render so the stable callback above always reflects
+  // the latest selected initiative, even from frozen memoized-card closures.
+  selectedInitiativeRef.current = selectedInitiative;
   const [initiatives, setInitiatives] = useState([]);
   const [selectedPeopleGroup, setSelectedPeopleGroup] = useState(
     location.pathname.startsWith('/people/uft/') || location.pathname === `/people/filter/${PEOPLE_GROUP_UFT}`
@@ -1708,19 +1733,25 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
   useEffect(() => {
     if (viewMode !== 'projects') return;
 
-    if (!filterSlug) {
+    // The active initiative comes from the filter-grid path (`/projects/filter/:slug`)
+    // or, on a project detail page, the preserved `?initiative=` query param.
+    const effectiveSlug = filterSlug || initiativeParam;
+
+    if (!effectiveSlug) {
       if (selectedInitiative) {
         setSelectedInitiative(null);
       }
       return;
     }
 
-    const matchingInitiative = initiatives.find(i => i.slug === filterSlug);
+    const matchingInitiative = initiatives.find(i => i.slug === effectiveSlug);
 
     // Initiatives with no published projects (e.g. draft-only) have no public filter
-    // page — send visitors back to the main projects grid.
+    // page — send visitors back to the main projects grid. Only applies to the filter
+    // grid URL; a detail page carrying the param should still render normally.
     if (
       initiatives.length > 0 &&
+      filterSlug &&
       filterSlug !== PEOPLE_GROUP_UFT &&
       matchingInitiative &&
       Number(matchingInitiative.project_count) === 0
@@ -1732,7 +1763,7 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
     if (matchingInitiative && selectedInitiative !== matchingInitiative.slug) {
       setSelectedInitiative(matchingInitiative.slug);
     }
-  }, [filterSlug, initiatives, selectedInitiative, viewMode, navigate]);
+  }, [filterSlug, initiativeParam, initiatives, selectedInitiative, viewMode, navigate]);
 
   // UFT ambassadors live under People — redirect legacy Projects filter URLs
   useEffect(() => {
@@ -2370,7 +2401,7 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
         const prevProject = allProjects[currentIndex - 1];
         if (prevProject) {
         analytics.navigation('previous', project?.slug, prevProject.slug);
-        navigate(`/projects/${prevProject.slug}`);
+        navigate(withInitiativeParam(`/projects/${prevProject.slug}`));
         }
       }
     }
@@ -2399,7 +2430,7 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
         const nextProject = allProjects[currentIndex + 1];
         if (nextProject) {
         analytics.navigation('next', project?.slug, nextProject.slug);
-        navigate(`/projects/${nextProject.slug}`);
+        navigate(withInitiativeParam(`/projects/${nextProject.slug}`));
         }
       }
     }
@@ -2762,7 +2793,7 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
                   }
                 } else if (viewMode === 'projects') {
                   if (allProjects.length > 0) {
-                    navigate(`/projects/${allProjects[0].slug}`);
+                    navigate(withInitiativeParam(`/projects/${allProjects[0].slug}`));
                   }
                 }
                 // Always set layout view to detail when clicking detail button
@@ -3097,7 +3128,7 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
                       }
                     } else if (viewMode === 'projects') {
                       if (allProjects.length > 0) {
-                        navigate(`/projects/${allProjects[0].slug}`);
+                        navigate(withInitiativeParam(`/projects/${allProjects[0].slug}`));
                       }
                     }
                     // Always set layout view to detail when clicking detail button
@@ -3606,7 +3637,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                             proj={proj}
                             onClick={() => {
                               setLayoutView('detail');
-                              navigate(`/projects/${proj.slug}`);
+                              navigate(withInitiativeParam(`/projects/${proj.slug}`));
                             }}
                           />
                       ))}
@@ -3852,7 +3883,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                           <div 
                             onClick={() => {
                               setLayoutView('detail');
-                              navigate(`/projects/${proj.slug}`);
+                              navigate(withInitiativeParam(`/projects/${proj.slug}`));
                             }}
                             className="flex items-center gap-6 p-4 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
                           >
