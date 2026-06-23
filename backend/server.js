@@ -28,6 +28,32 @@ app.use(compression({
 }));
 
 // CORS configuration - more flexible for development
+const stripWww = (hostname = '') => hostname.replace(/^www\./i, '');
+
+const parseOrigin = (originValue) => {
+  try {
+    return new URL(originValue);
+  } catch {
+    return null;
+  }
+};
+
+const isAllowedOrigin = (origin, allowedOrigins) => {
+  const requestOrigin = parseOrigin(origin);
+  if (!requestOrigin) return false;
+
+  return allowedOrigins.some((allowedOriginValue) => {
+    const allowedOrigin = parseOrigin(allowedOriginValue);
+    if (!allowedOrigin) return false;
+
+    const sameProtocol = requestOrigin.protocol === allowedOrigin.protocol;
+    const samePort = requestOrigin.port === allowedOrigin.port;
+    const sameBaseHostname = stripWww(requestOrigin.hostname) === stripWww(allowedOrigin.hostname);
+
+    return sameProtocol && samePort && sameBaseHostname;
+  });
+};
+
 const corsOptions = {
   origin: (origin, callback) => {
     // Allow requests with no origin (mobile apps, Postman, etc.)
@@ -42,7 +68,7 @@ const corsOptions = {
     
     // In production, allow configured frontend URL(s) and Render preview URLs
     const allowedOrigins = process.env.FRONTEND_URL ? 
-      process.env.FRONTEND_URL.split(',') : 
+      process.env.FRONTEND_URL.split(',').map((value) => value.trim()).filter(Boolean) : 
       ['http://localhost:5175', 'http://localhost:5176'];
     
     // Also allow any .onrender.com domain in production (for Render deployments)
@@ -50,7 +76,7 @@ const corsOptions = {
       return callback(null, true);
     }
     
-    if (allowedOrigins.includes(origin)) {
+    if (isAllowedOrigin(origin, allowedOrigins)) {
       callback(null, true);
     } else {
       // Log rejected origins in production for debugging

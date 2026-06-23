@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Frown } from 'lucide-react';
 import { profilesAPI } from '../utils/api';
 import PersonCard from '../components/PersonCard';
+import PersonCardSkeleton from '../components/PersonCardSkeleton';
 import FilterBar from '../components/FilterBar';
 import { useLoadingProgress } from '../contexts/LoadingProgressContext';
 import './PeoplePage.css';
@@ -28,6 +29,9 @@ function PeoplePage() {
     page: 1,
     limit: 12
   });
+  // Prevent stale responses from overwriting newer results when fetches
+  // resolve out of order (cache hits are instant, misses hit the network)
+  const fetchVersionRef = useRef(0);
 
   // Fetch available filter options
   useEffect(() => {
@@ -46,22 +50,26 @@ function PeoplePage() {
 
   // Fetch profiles when filters change
   useEffect(() => {
+    const version = ++fetchVersionRef.current;
+
     const fetchProfiles = async () => {
       setLoading(true);
       setError(null);
       startLoading();
-      setLoadingProgress(10);
-      
+      setLoadingProgress(30);
+
       try {
-        setLoadingProgress(30);
         const queryParams = {
           ...filters,
           page: pagination.page,
           limit: pagination.limit
         };
-        
+
         const data = await profilesAPI.getAll(queryParams);
-        
+
+        // A newer fetch has started since this one — discard this response
+        if (version !== fetchVersionRef.current) return;
+
         setLoadingProgress(80);
         if (data.success) {
           setProfiles(data.data);
@@ -70,16 +78,22 @@ function PeoplePage() {
         setLoadingProgress(100);
         completeLoading();
       } catch (err) {
+        if (version !== fetchVersionRef.current) return;
         setError('Failed to load profiles. Please try again.');
         console.error(err);
         setLoadingProgress(100);
         completeLoading();
       } finally {
-        setLoading(false);
+        if (version === fetchVersionRef.current) {
+          setLoading(false);
+        }
       }
     };
 
-    fetchProfiles();
+    // Debounce so typing in search doesn't fire a request per keystroke.
+    // First fetch on mount runs immediately.
+    const timeoutId = setTimeout(fetchProfiles, version === 1 ? 0 : 250);
+    return () => clearTimeout(timeoutId);
   }, [filters, pagination.page, pagination.limit]);
 
   // Update URL params when filters change
@@ -89,7 +103,8 @@ function PeoplePage() {
     if (filters.openToWork) params.set('openToWork', 'true');
     filters.skills.forEach(skill => params.append('skills', skill));
     filters.industries.forEach(ind => params.append('industries', ind));
-    setSearchParams(params);
+    // replace: true so each keystroke doesn't push a history entry
+    setSearchParams(params, { replace: true });
   }, [filters, setSearchParams]);
 
   const handleFilterChange = (newFilters) => {
@@ -132,6 +147,14 @@ function PeoplePage() {
         </div>
       )}
 
+      {loading && !error && profiles.length === 0 && (
+        <div className="people-grid">
+          {Array.from({ length: pagination.limit }).map((_, i) => (
+            <PersonCardSkeleton key={i} />
+          ))}
+        </div>
+      )}
+
       {!loading && !error && profiles.length === 0 && (
         <div className="flex flex-col items-center justify-center py-16">
           <Frown 
@@ -155,7 +178,9 @@ function PeoplePage() {
         </div>
       )}
 
-      {!loading && !error && profiles.length > 0 && (
+      {/* Keep previous results visible during refetches to avoid the grid
+          blanking out and popping back in */}
+      {!error && profiles.length > 0 && (
         <>
           <div className="people-page__results-info">
             <p className="text-muted text-small">
