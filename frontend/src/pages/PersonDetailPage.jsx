@@ -7,6 +7,10 @@ import { useAuth } from '../contexts/AuthContext';
 import LazyVideo from '../components/LazyVideo';
 import ProjectCardSkeleton from '../components/ProjectCardSkeleton';
 import PersonCardSkeleton from '../components/PersonCardSkeleton';
+import HiredBadge from '../components/HiredBadge';
+// Hired data still flows from the backend; badges are temporarily hidden on cards
+// until we have a reliable company-logo source. Flip to true to re-enable.
+const SHOW_HIRED_BADGE = false;
 // VirtualizedList requires react-window: npm install react-window
 // import VirtualizedList from '../components/VirtualizedList';
 import { Card, CardContent } from '@/components/ui/card';
@@ -251,6 +255,7 @@ const getEmbedUrl = (url) => {
 const ProfileCard = ({ prof, onClick }) => {
   const [cardRef, setCardRef] = useState(null);
   const isFeatured = prof.featured === true;
+  const isHired = prof.hired === true;
   
   const handleMouseMove = (e) => {
     if (!cardRef) return;
@@ -347,6 +352,18 @@ const ProfileCard = ({ prof, onClick }) => {
       {!(prof.photo_url || prof.photoUrl) && (
         <div className="absolute inset-0 z-0 bg-gradient-to-br from-blue-600 to-purple-600"></div>
       )}
+
+      {SHOW_HIRED_BADGE && isHired && (
+        <div className="absolute top-3 right-3 z-20">
+          <HiredBadge
+            company={prof.hired_company}
+            logoUrl={prof.hired_company_logo_url || prof.employment_company_logo_url}
+            domain={prof.employment_company_domain}
+            idSuffix={prof.slug}
+            size={88}
+          />
+        </div>
+      )}
       
       <CardContent className="relative z-10 p-6 h-full flex flex-col justify-between">
         {/* Top Section - Name and Title Only */}
@@ -403,7 +420,12 @@ const ProfileCard = ({ prof, onClick }) => {
 // Memoize ProfileCard to prevent unnecessary re-renders
 const MemoizedProfileCard = memo(ProfileCard, (prevProps, nextProps) => {
   return prevProps.prof.slug === nextProps.prof.slug && 
-         prevProps.prof.featured === nextProps.prof.featured;
+         prevProps.prof.featured === nextProps.prof.featured &&
+         prevProps.prof.hired === nextProps.prof.hired &&
+         prevProps.prof.hired_company === nextProps.prof.hired_company &&
+         prevProps.prof.hired_company_logo_url === nextProps.prof.hired_company_logo_url &&
+         prevProps.prof.employment_company_logo_url === nextProps.prof.employment_company_logo_url &&
+         prevProps.prof.employment_company_domain === nextProps.prof.employment_company_domain;
 });
 
 // ProjectCard component with holographic effect
@@ -991,10 +1013,18 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
   ]);
 
   const goToPrevGridPage = useCallback(() => {
+    setSlowLoadWarning(false);
+    setIsRefreshing(false);
+    setPaginationPending(true);
+    setGridListLoading(true);
     setGridPage((page) => Math.max(0, page - 1));
   }, []);
 
   const goToNextGridPage = useCallback(() => {
+    setSlowLoadWarning(false);
+    setIsRefreshing(false);
+    setPaginationPending(true);
+    setGridListLoading(true);
     setGridPage((page) => {
       const maxPage = Math.max(0, gridPagination.totalPages - 1);
       return Math.min(maxPage, page + 1);
@@ -1694,7 +1724,15 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
         ]);
         
         if (peopleFiltersData && peopleFiltersData.success) {
-          setAvailablePeopleFilters(peopleFiltersData.data || { skills: [], industries: [] });
+          const peopleFilterData = peopleFiltersData.data || { skills: [], industries: [] };
+          const sortedSkills = [...(peopleFilterData.skills || [])].sort((a, b) =>
+            String(a).localeCompare(String(b), undefined, { sensitivity: 'base' })
+          );
+          const sortedIndustries = [...(peopleFilterData.industries || [])].sort((a, b) =>
+            String(a).localeCompare(String(b), undefined, { sensitivity: 'base' })
+          );
+
+          setAvailablePeopleFilters({ skills: sortedSkills, industries: sortedIndustries });
         } else {
           console.error('Failed to fetch people filters:', peopleFiltersData);
           setAvailablePeopleFilters({ skills: [], industries: [] });
@@ -3239,7 +3277,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                           navigate('/people');
                           analytics.filterApplied('people_group', 'AI-Native Builders', 'people');
                         }}
-                        className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${
+                        className={`w-full text-left px-3 py-1 rounded-lg text-sm transition-all ${
                           selectedPeopleGroup === PEOPLE_GROUP_BUILDERS
                             ? 'bg-[#4242ea] text-white font-medium'
                             : 'bg-white hover:bg-gray-100 text-gray-700'
@@ -3258,7 +3296,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                           navigate(`/people/filter/${PEOPLE_GROUP_UFT}`);
                           analytics.filterApplied('people_group', 'UFT AI Ambassadors', 'people');
                         }}
-                        className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${
+                        className={`w-full text-left px-3 py-1 rounded-lg text-sm transition-all ${
                           selectedPeopleGroup === PEOPLE_GROUP_UFT
                             ? 'bg-[#4242ea] text-white font-medium'
                             : 'bg-white hover:bg-gray-100 text-gray-700'
@@ -3275,12 +3313,12 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
 
                   <div className="space-y-2">
                     <h4 className="text-sm">Skills</h4>
-                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                    <div className="space-y-0.5 max-h-48 overflow-y-auto">
                       {availablePeopleFilters.skills.length > 0 ? (
                         availablePeopleFilters.skills.map(skill => (
                         <div 
                           key={skill} 
-                          className="flex items-center space-x-2 min-h-[2.5rem] py-1"
+                          className="flex items-center space-x-2 min-h-[1.75rem] py-0"
                           onMouseDown={(e) => e.preventDefault()}
                         >
                           <Checkbox
@@ -3316,12 +3354,12 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
 
                   <div className="space-y-2">
                     <h4 className="text-sm">Industries</h4>
-                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                    <div className="space-y-0.5 max-h-48 overflow-y-auto">
                       {availablePeopleFilters.industries.length > 0 ? (
                         availablePeopleFilters.industries.map(industry => (
                         <div 
                           key={industry} 
-                          className="flex items-center space-x-2 min-h-[2.5rem] py-1"
+                          className="flex items-center space-x-2 min-h-[1.75rem] py-0"
                           onMouseDown={(e) => e.preventDefault()}
                         >
                           <Checkbox
@@ -3423,7 +3461,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                                 analytics.filterApplied('initiative', initiative.name, 'projects');
                               }
                             }}
-                            className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${
+                            className={`w-full text-left px-3 py-1 rounded-lg text-sm transition-all ${
                               selectedInitiative === initiative.slug
                                 ? 'bg-[#4242ea] text-white font-medium'
                                 : 'bg-white hover:bg-gray-100 text-gray-700'
@@ -3440,11 +3478,11 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
 
                   <div className="space-y-2">
                     <h4 className="text-sm">Technologies</h4>
-                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                    <div className="space-y-0.5 max-h-48 overflow-y-auto">
                       {availableProjectFilters.skills.map(skill => (
                         <div 
                           key={skill} 
-                          className="flex items-center space-x-2 min-h-[2.5rem] py-1"
+                          className="flex items-center space-x-2 min-h-[1.75rem] py-0"
                           onMouseDown={(e) => e.preventDefault()}
                         >
                           <Checkbox 
@@ -3477,11 +3515,11 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
 
                   <div className="space-y-2">
                     <h4 className="text-sm">Industries</h4>
-                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                    <div className="space-y-0.5 max-h-48 overflow-y-auto">
                       {availableProjectFilters.sectors.map(sector => (
                         <div 
                           key={sector} 
-                          className="flex items-center space-x-2 min-h-[2.5rem] py-1"
+                          className="flex items-center space-x-2 min-h-[1.75rem] py-0"
                           onMouseDown={(e) => e.preventDefault()}
                         >
                           <Checkbox 
@@ -4091,16 +4129,29 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                           className="flex flex-col md:flex-row md:items-start gap-4 md:gap-6 p-3 md:p-4 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
                         >
                           {/* Profile Photo */}
-                          <div className="w-20 h-20 rounded-full overflow-hidden flex-shrink-0">
-                            {(prof.photo_url || prof.photoUrl) ? (
-                              <img 
-                                src={getImageUrl(prof.photo_url || prof.photoUrl)}
-                                alt={prof.name}
-                                className="w-full h-full object-cover"
-                              />
-                            ) : (
-                              <div className="w-full h-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-bold text-xl">
-                                {prof.name?.split(' ').map(n => n.charAt(0)).join('').slice(0, 2)}
+                          <div className="relative flex-shrink-0">
+                            <div className="w-20 h-20 rounded-full overflow-hidden">
+                              {(prof.photo_url || prof.photoUrl) ? (
+                                <img 
+                                  src={getImageUrl(prof.photo_url || prof.photoUrl)}
+                                  alt={prof.name}
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : (
+                                <div className="w-full h-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-bold text-xl">
+                                  {prof.name?.split(' ').map(n => n.charAt(0)).join('').slice(0, 2)}
+                                </div>
+                              )}
+                            </div>
+                            {SHOW_HIRED_BADGE && prof.hired && (
+                              <div className="absolute -top-1 -right-1">
+                                <HiredBadge
+                                  company={prof.hired_company}
+                                  logoUrl={prof.hired_company_logo_url || prof.employment_company_logo_url}
+                                  domain={prof.employment_company_domain}
+                                  idSuffix={`list-${prof.slug}`}
+                                  size={52}
+                                />
                               </div>
                             )}
                           </div>

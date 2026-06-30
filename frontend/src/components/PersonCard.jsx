@@ -1,7 +1,11 @@
 import { memo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getImageUrl } from '../utils/api';
+import HiredBadge from './HiredBadge';
 import './PersonCard.css';
+
+// Hired badge temporarily hidden on cards (backend data still flows). Flip to re-enable.
+const SHOW_HIRED_BADGE = false;
 
 // Build srcset for WebP uploads that have a 400w variant
 function getPhotoSrcSet(photoUrl) {
@@ -16,9 +20,21 @@ function PersonCard({ person }) {
 
   const photoSrc = getImageUrl(person.photo_url);
   const photoSrcSet = getPhotoSrcSet(person.photo_url);
+  const isHired = Boolean(person.hired);
 
   return (
     <Link to={`/people/${person.slug}`} className="person-card">
+      {SHOW_HIRED_BADGE && isHired && (
+        <div className="person-card__hired-badge">
+          <HiredBadge
+            company={person.hired_company}
+            logoUrl={person.hired_company_logo_url || person.employment_company_logo_url}
+            domain={person.employment_company_domain}
+            idSuffix={`search-${person.slug}`}
+            size={72}
+          />
+        </div>
+      )}
       <div className="person-card__header">
         {person.photo_url ? (
           <div className={`person-card__photo-wrap${photoLoaded ? ' person-card__photo-wrap--loaded' : ''}`}>
@@ -101,6 +117,11 @@ export default memo(PersonCard, (prevProps, nextProps) => {
     prevProps.person?.name === nextProps.person?.name &&
     prevProps.person?.title === nextProps.person?.title &&
     prevProps.person?.open_to_work === nextProps.person?.open_to_work &&
+    prevProps.person?.hired === nextProps.person?.hired &&
+    prevProps.person?.hired_company === nextProps.person?.hired_company &&
+    prevProps.person?.hired_company_logo_url === nextProps.person?.hired_company_logo_url &&
+    prevProps.person?.employment_company_logo_url === nextProps.person?.employment_company_logo_url &&
+    prevProps.person?.employment_company_domain === nextProps.person?.employment_company_domain &&
     JSON.stringify(prevProps.person?.skills) === JSON.stringify(nextProps.person?.skills) &&
     JSON.stringify(prevProps.person?.industry_expertise) === JSON.stringify(nextProps.person?.industry_expertise)
   );

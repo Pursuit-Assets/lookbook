@@ -50,6 +50,9 @@ function AdminPersonEditPage() {
     experience: [],
     open_to_work: false,
     featured: false,
+    hired: null,
+    hired_company: '',
+    hired_company_logo_url: '',
     slug: ''
   });
 
@@ -134,6 +137,9 @@ function AdminPersonEditPage() {
         experience: person.experience || [],
         open_to_work: person.openToWork || person.open_to_work || false,
         featured: person.featured || false,
+        hired: person.hired ?? null,
+        hired_company: person.hired_company || person.hiredCompany || '',
+        hired_company_logo_url: person.hired_company_logo_url || person.hiredCompanyLogoUrl || '',
         slug: person.slug || ''
       });
     } catch (error) {
@@ -198,6 +204,37 @@ function AdminPersonEditPage() {
     } catch (error) {
       console.error('Error compressing image:', error);
       toast.error('Failed to compress image', {
+        description: 'Please try a different image'
+      });
+    }
+  };
+
+  // Handle company logo file upload (hired status)
+  const handleLogoUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      toast.error('Invalid file type', {
+        description: 'Please upload an image file (PNG, JPG, SVG, etc.)'
+      });
+      return;
+    }
+
+    try {
+      const options = {
+        maxSizeMB: 0.2,
+        maxWidthOrHeight: 400,
+        useWebWorker: true,
+        fileType: file.type
+      };
+      const compressedFile = await imageCompression(file, options);
+      const base64 = await fileToBase64(compressedFile);
+      setFormData(prev => ({ ...prev, hired_company_logo_url: base64 }));
+      toast.success('Logo added');
+    } catch (error) {
+      console.error('Error processing logo:', error);
+      toast.error('Failed to process logo', {
         description: 'Please try a different image'
       });
     }
@@ -510,6 +547,88 @@ function AdminPersonEditPage() {
                   Featured ⭐
                   <span className="ml-2 text-xs text-gray-500">(Ultra Premium card effect)</span>
                 </Label>
+              </div>
+
+              {/* Hired status */}
+              <div className="rounded-lg border border-gray-200 p-4 space-y-4">
+                <div>
+                  <Label htmlFor="hired" className="font-semibold">Hired Badge</Label>
+                  <select
+                    id="hired"
+                    value={formData.hired === true ? 'show' : formData.hired === false ? 'hide' : 'auto'}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setFormData({ ...formData, hired: v === 'show' ? true : v === 'hide' ? false : null });
+                    }}
+                    className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900"
+                  >
+                    <option value="auto">Automatic — from employment records</option>
+                    <option value="show">Always show</option>
+                    <option value="hide">Hidden</option>
+                  </select>
+                  <p className="mt-1 text-xs text-gray-500">
+                    Auto shows the “Hired at …” seal when this person has an active full-time job on file. Company &amp; logo fill in automatically — set the overrides below only if you need to correct them.
+                  </p>
+                </div>
+
+                {formData.hired !== false && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="hired_company">Company (override)</Label>
+                      <Input
+                        id="hired_company"
+                        value={formData.hired_company}
+                        onChange={(e) => setFormData({ ...formData, hired_company: e.target.value })}
+                        placeholder="Auto from employment records"
+                      />
+                    </div>
+                    <div>
+                      <Label>Logo (override)</Label>
+                      <div className="mt-1 flex items-center gap-3">
+                        {formData.hired_company_logo_url ? (
+                          <img
+                            src={getImageUrl(formData.hired_company_logo_url)}
+                            alt="Company logo"
+                            className="w-12 h-12 object-contain rounded border border-gray-200 bg-white p-1"
+                          />
+                        ) : (
+                          <div className="w-12 h-12 rounded border border-dashed border-gray-300 flex items-center justify-center text-gray-300 text-xs">
+                            Logo
+                          </div>
+                        )}
+                        <div className="flex items-center gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => document.getElementById('logo-upload')?.click()}
+                            style={{ backgroundColor: 'white', color: '#1f2937', borderColor: '#d1d5db' }}
+                          >
+                            Upload
+                          </Button>
+                          {formData.hired_company_logo_url && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setFormData({ ...formData, hired_company_logo_url: '' })}
+                              className="text-red-500 hover:text-red-700"
+                            >
+                              Remove
+                            </Button>
+                          )}
+                        </div>
+                        <input
+                          id="logo-upload"
+                          type="file"
+                          accept="image/*"
+                          onChange={handleLogoUpload}
+                          className="hidden"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -1247,6 +1366,87 @@ function AdminPersonEditPage() {
                               <Label htmlFor="featured-wysiwyg" className="cursor-pointer">Featured ⭐</Label>
                             </div>
                           </div>
+                        </div>
+
+                        {/* Hired status */}
+                        <div className="mt-4 pt-4 border-t">
+                          <div>
+                            <Label htmlFor="hired-wysiwyg" className="text-sm font-semibold">Hired Badge</Label>
+                            <select
+                              id="hired-wysiwyg"
+                              value={formData.hired === true ? 'show' : formData.hired === false ? 'hide' : 'auto'}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setFormData({ ...formData, hired: v === 'show' ? true : v === 'hide' ? false : null });
+                              }}
+                              className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900"
+                            >
+                              <option value="auto">Automatic — from employment records</option>
+                              <option value="show">Always show</option>
+                              <option value="hide">Hidden</option>
+                            </select>
+                            <p className="mt-1 text-xs text-gray-500">
+                              Auto shows the seal when this person has an active full-time job on file.
+                            </p>
+                          </div>
+
+                          {formData.hired !== false && (
+                            <div className="grid grid-cols-2 gap-4 mt-3">
+                              <div>
+                                <Label htmlFor="hired_company-wysiwyg" className="text-sm font-semibold">Company (override)</Label>
+                                <Input
+                                  id="hired_company-wysiwyg"
+                                  value={formData.hired_company}
+                                  onChange={(e) => setFormData({ ...formData, hired_company: e.target.value })}
+                                  placeholder="Auto from employment records"
+                                  className="mt-1"
+                                />
+                              </div>
+                              <div>
+                                <Label className="text-sm font-semibold">Logo (override)</Label>
+                                <div className="mt-1 flex items-center gap-3">
+                                  {formData.hired_company_logo_url ? (
+                                    <img
+                                      src={getImageUrl(formData.hired_company_logo_url)}
+                                      alt="Company logo"
+                                      className="w-12 h-12 object-contain rounded border border-gray-200 bg-white p-1"
+                                    />
+                                  ) : (
+                                    <div className="w-12 h-12 rounded border border-dashed border-gray-300 flex items-center justify-center text-gray-300 text-xs">
+                                      Logo
+                                    </div>
+                                  )}
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => document.getElementById('logo-upload-wysiwyg')?.click()}
+                                    style={{ backgroundColor: 'white', color: '#1f2937', borderColor: '#d1d5db' }}
+                                  >
+                                    Upload
+                                  </Button>
+                                  {formData.hired_company_logo_url && (
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => setFormData({ ...formData, hired_company_logo_url: '' })}
+                                      className="text-red-500 hover:text-red-700"
+                                    >
+                                      Remove
+                                    </Button>
+                                  )}
+                                  <input
+                                    id="logo-upload-wysiwyg"
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={handleLogoUpload}
+                                    className="hidden"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>

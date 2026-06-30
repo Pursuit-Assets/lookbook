@@ -94,6 +94,18 @@ const getAllProfiles = async (filters = {}) => {
         p.skills,
         p.industry_expertise,
         p.open_to_work,
+        -- Effective "hired" status. p.hired is a tri-state override:
+        --   NULL  -> auto-derive from employment_records (active full-time job)
+        --   TRUE  -> always show the badge
+        --   FALSE -> always hide the badge
+        (CASE WHEN p.hired IS NULL THEN (emp.company_name IS NOT NULL) ELSE p.hired END) AS hired,
+        -- Company shown on the badge: manual override wins, else the live employment record.
+        COALESCE(NULLIF(btrim(p.hired_company), ''), emp.company_name) AS hired_company,
+        -- Manually uploaded logo override (the badge falls back to companies/domain logos otherwise).
+        NULLIF(btrim(p.hired_company_logo_url), '') AS hired_company_logo_url,
+        emp.role_title AS employment_role,
+        comp.logo_url AS employment_company_logo_url,
+        comp.domain AS employment_company_domain,
         p.highlights,
         p.photo_url,
         p.photo_lqip,
@@ -112,6 +124,39 @@ const getAllProfiles = async (filters = {}) => {
         ) as project_count
       FROM lookbook_profiles p
       LEFT JOIN users u ON p.user_id = u.user_id
+      -- Most recent ACTIVE FULL-TIME employment record = "hired into a job".
+      LEFT JOIN LATERAL (
+        SELECT er.company_name, er.role_title
+        FROM employment_records er
+        WHERE er.user_id = p.user_id
+          AND er.engagement_stage = 'active'
+          AND er.employment_type = 'full_time'
+          AND er.company_name IS NOT NULL
+          AND btrim(er.company_name) <> ''
+        ORDER BY er.start_date DESC NULLS LAST, er.created_at DESC NULLS LAST
+        LIMIT 1
+      ) emp ON true
+      -- Best matching company row (for logo/domain). Normalize names by stripping
+      -- non-alphanumerics; prefer exact match, then prefix match for longer names
+      -- (e.g. "JP Morgan Chase" -> "JPMorgan Chase & Co."). Prefer rows with a logo.
+      LEFT JOIN LATERAL (
+        SELECT c.domain, c.logo_url
+        FROM companies c
+        WHERE emp.company_name IS NOT NULL
+          AND (
+            regexp_replace(lower(c.name), '[^a-z0-9]', '', 'g') = regexp_replace(lower(emp.company_name), '[^a-z0-9]', '', 'g')
+            OR (
+              length(regexp_replace(lower(emp.company_name), '[^a-z0-9]', '', 'g')) >= 6
+              AND regexp_replace(lower(c.name), '[^a-z0-9]', '', 'g') LIKE regexp_replace(lower(emp.company_name), '[^a-z0-9]', '', 'g') || '%'
+            )
+          )
+        ORDER BY
+          (regexp_replace(lower(c.name), '[^a-z0-9]', '', 'g') = regexp_replace(lower(emp.company_name), '[^a-z0-9]', '', 'g')) DESC,
+          (c.logo_url IS NOT NULL) DESC,
+          (c.domain IS NOT NULL) DESC,
+          c.times_used DESC NULLS LAST
+        LIMIT 1
+      ) comp ON true
       ${whereClause}
     ),
     profile_count AS (
@@ -201,6 +246,9 @@ const createProfile = async (profileData) => {
     skills = [],
     industryExpertise = [],
     openToWork = false,
+    hired = null,
+    hiredCompany = null,
+    hiredCompanyLogoUrl = null,
     highlights = [],
     photoUrl,
     photoLqip,
@@ -214,9 +262,10 @@ const createProfile = async (profileData) => {
   const query = `
     INSERT INTO lookbook_profiles (
       user_id, slug, title, bio, skills, industry_expertise,
-      open_to_work, highlights, photo_url, photo_lqip,
+      open_to_work, hired, hired_company, hired_company_logo_url,
+      highlights, photo_url, photo_lqip,
       linkedin_url, github_url, website_url, x_url, featured
-    ) VALUES ($1, $2, $3, $4, $5::text[], $6::text[], $7, $8::text[], $9, $10, $11, $12, $13, $14, $15)
+    ) VALUES ($1, $2, $3, $4, $5::text[], $6::text[], $7, $8, $9, $10, $11::text[], $12, $13, $14, $15, $16, $17, $18)
     RETURNING *
   `;
   
@@ -229,6 +278,9 @@ const createProfile = async (profileData) => {
     Array.isArray(skills) ? skills : [], 
     Array.isArray(industryExpertise) ? industryExpertise : [],
     openToWork, 
+    hired,
+    hiredCompany,
+    hiredCompanyLogoUrl,
     Array.isArray(highlights) ? highlights : [], 
     photoUrl, 
     photoLqip,
@@ -250,6 +302,7 @@ const createProfile = async (profileData) => {
 const updateProfile = async (slug, updates) => {
   const allowedFields = [
     'slug', 'title', 'bio', 'skills', 'industry_expertise', 'open_to_work',
+    'hired', 'hired_company', 'hired_company_logo_url',
     'highlights', 'photo_url', 'photo_lqip', 'linkedin_url',
     'github_url', 'website_url', 'x_url', 'featured'
   ];

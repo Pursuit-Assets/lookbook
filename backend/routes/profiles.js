@@ -610,6 +610,11 @@ router.post('/', async (req, res) => {
     const rawPhotoUrl = profileData.photoUrl || profileData.photo_url || null;
     const processedPhotoUrl = await resolveProfilePhotoUrl(rawPhotoUrl, slug);
 
+    const rawLogoUrl = profileData.hiredCompanyLogoUrl || profileData.hired_company_logo_url || null;
+    const processedLogoUrl = isBase64Image(rawLogoUrl)
+      ? (await processBase64Image(rawLogoUrl, 'profiles', `${slug}-logo-`, { maxWidth: 400, quality: 90 })).url
+      : rawLogoUrl;
+
     // Normalize field names: convert snake_case to camelCase
     // Handle both formats for compatibility
     // Ensure arrays are always arrays (not null/undefined)
@@ -621,6 +626,9 @@ router.post('/', async (req, res) => {
       skills: Array.isArray(profileData.skills) ? profileData.skills : [],
       industryExpertise: Array.isArray(profileData.industryExpertise) ? profileData.industryExpertise : (Array.isArray(profileData.industry_expertise) ? profileData.industry_expertise : []),
       openToWork: profileData.openToWork !== undefined ? profileData.openToWork : (profileData.open_to_work !== undefined ? profileData.open_to_work : false),
+      hired: profileData.hired !== undefined ? profileData.hired : null,
+      hiredCompany: profileData.hiredCompany || profileData.hired_company || null,
+      hiredCompanyLogoUrl: processedLogoUrl,
       highlights: Array.isArray(profileData.highlights) ? profileData.highlights : [],
       photoUrl: processedPhotoUrl,
       photoLqip: profileData.photoLqip || profileData.photo_lqip || null,
@@ -801,6 +809,18 @@ router.put('/:slug', async (req, res) => {
         profileUpdates.photo_url = rawPhotoUpdate;
       }
       delete profileUpdates.photoUrl;
+    }
+
+    // Process the hiring company logo if a new base64 image was provided
+    const rawLogoUpdate = profileUpdates.hired_company_logo_url || profileUpdates.hiredCompanyLogoUrl;
+    if (rawLogoUpdate !== undefined) {
+      if (isBase64Image(rawLogoUpdate)) {
+        const logoResult = await processBase64Image(rawLogoUpdate, 'profiles', `${slug}-logo-`, { maxWidth: 400, quality: 90 });
+        profileUpdates.hired_company_logo_url = logoResult.url;
+      } else {
+        profileUpdates.hired_company_logo_url = rawLogoUpdate;
+      }
+      delete profileUpdates.hiredCompanyLogoUrl;
     }
 
     // Normalize field names: convert snake_case to camelCase for updateProfile

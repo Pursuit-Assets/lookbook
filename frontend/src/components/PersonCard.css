@@ -21,6 +21,14 @@
   100% { background-position: 200% 0; }
 }
 
+/* Hired seal badge pinned to the card's top-right corner */
+.person-card__hired-badge {
+  position: absolute;
+  top: var(--spacing-sm);
+  right: var(--spacing-sm);
+  z-index: 2;
+}
+
 .person-card__header {
   padding: var(--spacing-lg);
   display: flex;

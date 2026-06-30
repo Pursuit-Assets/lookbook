@@ -1,0 +1,75 @@
+.hired-badge {
+  position: relative;
+  flex-shrink: 0;
+  border-radius: 50%;
+  filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.35));
+}
+
+.hired-badge__ring {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  /* Slow rotation gives the seal a subtle, celebratory spin */
+  animation: hiredBadgeSpin 14s linear infinite;
+}
+
+.hired-badge__bg {
+  fill: #4242ea;
+  stroke: #ffffff;
+  stroke-width: 2;
+}
+
+.hired-badge__inner {
+  fill: #ffffff;
+}
+
+.hired-badge__text {
+  fill: #ffffff;
+  font-family: 'Galano Grotesque', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+
+.hired-badge__center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 56%;
+  height: 56%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  overflow: hidden;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hired-badge__center img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 14%;
+}
+
+.hired-badge__fallback {
+  font-family: 'Galano Grotesque', sans-serif;
+  font-weight: 800;
+  font-size: 1.5rem;
+  color: #4242ea;
+  line-height: 1;
+}
+
+@keyframes hiredBadgeSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hired-badge__ring {
+    animation: none;
+  }
+}
