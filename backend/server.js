@@ -6,7 +6,7 @@ const express = require('express');
 const cors = require('cors');
 const compression = require('compression');
 const { pool } = require('./db/dbConfig');
-const { ensureUploadsRoot } = require('./utils/uploadPaths');
+const { ensureUploadsRoot, DEFAULT_UPLOADS_ROOT } = require('./utils/uploadPaths');
 
 const app = express();
 const PORT = process.env.PORT || 4002; // Default to 4002 to match frontend
@@ -99,11 +99,16 @@ const uploadsRoot = ensureUploadsRoot();
 
 // Serve static files from uploads directory (for uploaded images)
 // Cache images aggressively in the browser - 7 days
-app.use('/uploads', express.static(uploadsRoot, {
-  maxAge: '7d',
-  etag: true,
-  lastModified: true
-}));
+const staticOpts = { maxAge: '7d', etag: true, lastModified: true };
+app.use('/uploads', express.static(uploadsRoot, staticOpts));
+
+// Fallback: serve repo-bundled uploads when a file isn't on the runtime disk.
+// In production UPLOADS_ROOT points at a persistent disk, so files committed to
+// backend/public/uploads (version-controlled defaults) are still served if the
+// disk doesn't have them — they ship with the deploy and can't silently vanish.
+if (DEFAULT_UPLOADS_ROOT !== uploadsRoot) {
+  app.use('/uploads', express.static(DEFAULT_UPLOADS_ROOT, staticOpts));
+}
 
 // Request logging middleware
 app.use((req, res, next) => {
