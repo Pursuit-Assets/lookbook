@@ -8,7 +8,7 @@ services:
     name: lookbook-api
     env: node
     region: oregon
-    plan: free
+    plan: starter
     buildCommand: npm install
     startCommand: node server.js
     rootDir: backend
@@ -21,6 +21,12 @@ services:
         sync: false
       - key: FRONTEND_URL
         sync: false
+      - key: UPLOADS_ROOT
+        value: /var/data/uploads
+    disks:
+      - name: lookbook-uploads
+        mountPath: /var/data
+        sizeGB: 5
     healthCheckPath: /api/health
 
   # Frontend Static Site

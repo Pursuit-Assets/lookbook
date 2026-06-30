@@ -1,6 +1,6 @@
-import { memo, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getImageUrl } from '../utils/api';
+import { getImageUrl, getProjectTileImageUrl, getVideoThumbnailUrl } from '../utils/api';
 import './ProjectCard.css';
 
 // Build srcset for WebP uploads that have a 400w variant
@@ -24,12 +24,21 @@ function getDisplaySummary(summary) {
 
 function ProjectCard({ project }) {
   const [imageLoaded, setImageLoaded] = useState(false);
+  const [cardSrc, setCardSrc] = useState(() => getProjectTileImageUrl(project));
 
   // Priority: video > card background image > main image
   const cardVideoUrl = project.card_background_video_url;
   const cardImageUrl = project.card_background_url || project.main_image_url;
-  const cardSrc = getImageUrl(cardImageUrl);
+  const fallbackThumbnail = useMemo(
+    () => getVideoThumbnailUrl(project.demo_video_url),
+    [project.demo_video_url]
+  );
   const cardSrcSet = getImageSrcSet(cardImageUrl);
+
+  useEffect(() => {
+    setImageLoaded(false);
+    setCardSrc(getProjectTileImageUrl(project));
+  }, [project.slug, project.card_background_url, project.main_image_url, project.icon_url, project.demo_video_url]);
 
   return (
     <Link to={`/projects/${project.slug}`} className="project-card">
@@ -54,6 +63,13 @@ function ProjectCard({ project }) {
             loading="lazy"
             className={imageLoaded ? 'loaded' : ''}
             onLoad={() => setImageLoaded(true)}
+            onError={() => {
+              if (fallbackThumbnail && cardSrc !== fallbackThumbnail) {
+                setCardSrc(fallbackThumbnail);
+                return;
+              }
+              setCardSrc(null);
+            }}
           />
         </div>
       ) : null}

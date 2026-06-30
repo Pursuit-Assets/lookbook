@@ -40,7 +40,7 @@ function AmbassadorDetailView({ project }) {
       <div className="flex flex-col md:flex-row gap-6 mb-6 items-start">
         {/* Headshot */}
         <div className="flex-shrink-0 w-full md:w-56">
-          <div className="rounded-lg overflow-hidden" style={{ height: '260px' }}>
+          <div className="rounded-lg overflow-hidden aspect-[4/5] max-h-[320px] md:aspect-auto md:h-[260px] md:max-h-none">
             {project.main_image_url ? (
               <img
                 src={getImageUrl(project.main_image_url)}
