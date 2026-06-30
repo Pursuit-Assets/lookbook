@@ -101,11 +101,9 @@ const getAllProfiles = async (filters = {}) => {
         (CASE WHEN p.hired IS NULL THEN (emp.company_name IS NOT NULL) ELSE p.hired END) AS hired,
         -- Company shown on the badge: manual override wins, else the live employment record.
         COALESCE(NULLIF(btrim(p.hired_company), ''), emp.company_name) AS hired_company,
-        -- Manually uploaded logo override (the badge falls back to companies/domain logos otherwise).
+        -- Manually uploaded logo override (used by the badge when present).
         NULLIF(btrim(p.hired_company_logo_url), '') AS hired_company_logo_url,
         emp.role_title AS employment_role,
-        comp.logo_url AS employment_company_logo_url,
-        comp.domain AS employment_company_domain,
         p.highlights,
         p.photo_url,
         p.photo_lqip,
@@ -136,27 +134,6 @@ const getAllProfiles = async (filters = {}) => {
         ORDER BY er.start_date DESC NULLS LAST, er.created_at DESC NULLS LAST
         LIMIT 1
       ) emp ON true
-      -- Best matching company row (for logo/domain). Normalize names by stripping
-      -- non-alphanumerics; prefer exact match, then prefix match for longer names
-      -- (e.g. "JP Morgan Chase" -> "JPMorgan Chase & Co."). Prefer rows with a logo.
-      LEFT JOIN LATERAL (
-        SELECT c.domain, c.logo_url
-        FROM companies c
-        WHERE emp.company_name IS NOT NULL
-          AND (
-            regexp_replace(lower(c.name), '[^a-z0-9]', '', 'g') = regexp_replace(lower(emp.company_name), '[^a-z0-9]', '', 'g')
-            OR (
-              length(regexp_replace(lower(emp.company_name), '[^a-z0-9]', '', 'g')) >= 6
-              AND regexp_replace(lower(c.name), '[^a-z0-9]', '', 'g') LIKE regexp_replace(lower(emp.company_name), '[^a-z0-9]', '', 'g') || '%'
-            )
-          )
-        ORDER BY
-          (regexp_replace(lower(c.name), '[^a-z0-9]', '', 'g') = regexp_replace(lower(emp.company_name), '[^a-z0-9]', '', 'g')) DESC,
-          (c.logo_url IS NOT NULL) DESC,
-          (c.domain IS NOT NULL) DESC,
-          c.times_used DESC NULLS LAST
-        LIMIT 1
-      ) comp ON true
       ${whereClause}
     ),
     profile_count AS (
