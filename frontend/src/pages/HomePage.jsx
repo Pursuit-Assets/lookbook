@@ -4,6 +4,32 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Briefcase, ArrowRight } from 'lucide-react';
 import { projectsAPI, profilesAPI, getImageUrl } from '../utils/api';
 
+// Resolve a usable preview image for a project. Older projects populate
+// main_image_url (sometimes a JSON array); newer initiative projects store
+// their image in card_background_url. Check all of them so every project
+// shows artwork instead of the briefcase fallback.
+function getProjectImageUrl(project) {
+  if (!project) return null;
+  if (project.icon_url) return getImageUrl(project.icon_url);
+  const candidates = [project.main_image_url, project.card_background_url];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    try {
+      const parsed = JSON.parse(candidate);
+      if (Array.isArray(parsed)) {
+        const first = parsed.find(Boolean);
+        const url = typeof first === 'string' ? first : first?.url;
+        if (url) return getImageUrl(url);
+        continue;
+      }
+    } catch {
+      // Not JSON — treat as a plain URL string below.
+    }
+    return getImageUrl(candidate);
+  }
+  return null;
+}
+
 function HomePage() {
   const navigate = useNavigate();
   const [projects, setProjects] = useState([]);
@@ -48,6 +74,8 @@ function HomePage() {
               } catch {
                 images.push(getImageUrl(project.main_image_url));
               }
+            } else if (project.card_background_url) {
+              images.push(getImageUrl(project.card_background_url));
             }
           });
           setProjectImages(images);
@@ -442,29 +470,14 @@ function HomePage() {
                     style={{height: '56px'}}
                   >
                     {visibleProjects.map((project, i) => {
-                      // Get project icon or first image
-                      let imageUrl = null;
-                      if (project.icon_url) {
-                        imageUrl = getImageUrl(project.icon_url);
-                      } else if (project.main_image_url) {
-                        try {
-                          const parsed = JSON.parse(project.main_image_url);
-                          if (Array.isArray(parsed) && parsed.length > 0) {
-                            const url = typeof parsed[0] === 'string' ? parsed[0] : parsed[0].url;
-                            imageUrl = getImageUrl(url);
-                          } else {
-                            imageUrl = getImageUrl(project.main_image_url);
-                          }
-                        } catch {
-                          imageUrl = getImageUrl(project.main_image_url);
-                        }
-                      }
+                      // Get project icon or first image (handles main_image_url and card_background_url)
+                      const imageUrl = getProjectImageUrl(project);
 
                       return (
                         <div
                           key={`${i}-${project.slug}`}
                           className="w-14 h-14 flex-shrink-0 rounded-full border-4 border-white overflow-hidden bg-gradient-to-br from-orange-500 to-red-500 flex items-center justify-center text-white text-sm font-semibold"
-                          title={project.name}
+                          title={project.title}
                           style={{
                             aspectRatio: '1 / 1',
                             animationName: isInitialLoad ? 'slideInRight' : 'fadeIn',
@@ -478,7 +491,7 @@ function HomePage() {
                           {imageUrl ? (
                             <img
                               src={imageUrl}
-                              alt={project.name}
+                              alt={project.title}
                               className="w-full h-full object-cover"
                             />
                           ) : (

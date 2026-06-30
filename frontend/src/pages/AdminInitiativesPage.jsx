@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Edit2, Trash2, Save, X, Rocket, FolderOpen, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
+import { Plus, Edit2, Trash2, Save, X, Rocket, FolderOpen, ChevronDown, ChevronUp, ExternalLink, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
 
 function AdminInitiativesPage() {
@@ -34,7 +34,8 @@ function AdminInitiativesPage() {
 
   const fetchAllProjects = async () => {
     try {
-      const response = await projectsAPI.getAll({ limit: 1000 });
+      // status 'all' so draft projects can be assigned to initiatives before publishing
+      const response = await projectsAPI.getAll({ limit: 1000, status: 'all' });
       setAllProjects(response.data || []);
     } catch (error) {
       console.error('Error fetching projects:', error);
@@ -114,6 +115,20 @@ function AdminInitiativesPage() {
     } catch (error) {
       console.error('Error deleting initiative:', error);
       toast.error('Failed to delete initiative');
+    }
+  };
+
+  // Toggle whether the entire initiative (and all its projects) is visible to
+  // the public. Hiding overrides each project's individual publish status.
+  const toggleVisibility = async (initiative) => {
+    const nextActive = !initiative.is_active;
+    try {
+      await initiativesAPI.update(initiative.id, { isActive: nextActive });
+      toast.success(nextActive ? 'Initiative is now visible' : 'Initiative hidden from the public site');
+      fetchInitiatives();
+    } catch (error) {
+      console.error('Error toggling initiative visibility:', error);
+      toast.error(error.responseData?.error || 'Failed to update initiative visibility');
     }
   };
 
@@ -308,7 +323,10 @@ function AdminInitiativesPage() {
                         <div className="flex items-center gap-3 mb-2">
                           <h3 className="text-xl font-bold text-gray-900">{initiative.name}</h3>
                           {!initiative.is_active && (
-                            <Badge variant="secondary">Inactive</Badge>
+                            <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-200 border-0">
+                              <EyeOff className="w-3 h-3 mr-1" />
+                              Hidden
+                            </Badge>
                           )}
                           <Badge 
                             className="bg-purple-100 text-purple-800 hover:bg-purple-200 border-0 cursor-pointer"
@@ -333,6 +351,26 @@ function AdminInitiativesPage() {
                       </div>
                       
                       <div className="flex gap-2 ml-4">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => toggleVisibility(initiative)}
+                          className="flex items-center gap-1.5 border border-gray-300 hover:bg-gray-50"
+                          style={{ backgroundColor: 'white', color: '#374151' }}
+                          title={initiative.is_active ? 'Hide this initiative and all its projects from the public site' : 'Make this initiative visible to the public'}
+                        >
+                          {initiative.is_active ? (
+                            <>
+                              <EyeOff className="w-4 h-4" />
+                              Hide
+                            </>
+                          ) : (
+                            <>
+                              <Eye className="w-4 h-4" />
+                              Show
+                            </>
+                          )}
+                        </Button>
                         <Button
                           size="sm"
                           variant="ghost"
@@ -439,6 +477,7 @@ function AdminInitiativesPage() {
             <li>• When users click an initiative in the sidebar, they see only projects with a matching value</li>
             <li>• To add a project to an initiative, edit the project and set its initiative field to match the initiative's value</li>
             <li>• The description you set here will appear in the header when users filter by this initiative</li>
+            <li>• <strong>Hide</strong> removes the entire initiative — its sidebar tab and all of its projects — from the public site, even projects that are individually published. <strong>Show</strong> restores it.</li>
           </ul>
         </div>
       </div>

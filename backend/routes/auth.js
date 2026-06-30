@@ -150,6 +150,20 @@ const verifyAdminToken = (req, res, next) => {
   }
 };
 
+// Non-middleware check: returns true if the request carries a valid admin JWT.
+// Useful for routes that change behavior for admins without rejecting public access.
+const isAdminRequest = (req) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) return false;
+    const decoded = jwt.verify(token, JWT_SECRET);
+    return decoded?.role === 'admin';
+  } catch {
+    return false;
+  }
+};
+
 module.exports = router;
 module.exports.verifyAdminToken = verifyAdminToken;
+module.exports.isAdminRequest = isAdminRequest;
 

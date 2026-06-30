@@ -162,6 +162,24 @@ api.interceptors.response.use(
       // Attach the error data to the error object for easier access
       error.responseData = error.response.data;
     }
+
+    // Global handling for expired/invalid admin sessions. If a protected request
+    // comes back 401, clear the stale session and bounce to the login screen so
+    // the user isn't stuck with a cryptic error on an action that silently failed.
+    const status = error.response?.status;
+    const requestUrl = error.config?.url || '';
+    const isAuthEndpoint = requestUrl.includes('/auth/login') || requestUrl.includes('/auth/verify');
+
+    if (status === 401 && !isAuthEndpoint && localStorage.getItem('adminToken')) {
+      localStorage.removeItem('adminToken');
+      localStorage.removeItem('adminUser');
+      if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/admin/login')) {
+        // Preserve where they were so login can return them after re-auth.
+        const redirectTo = encodeURIComponent(window.location.pathname + window.location.search);
+        window.location.assign(`/admin/login?expired=1&redirect=${redirectTo}`);
+      }
+    }
+
     return Promise.reject(error);
   }
 );
@@ -298,13 +316,14 @@ export const profilesAPI = {
 
 export const projectsAPI = {
   // Use cached GET with params for list views - cache for 5 minutes
-  // Only include participants when explicitly requested (for detail views)
   getAll: (filters = {}) => {
-    // For detail views that need participants, don't cache (always fresh)
-    if (filters.includeParticipants) {
+    // Admin views requesting non-active statuses (drafts) must always be fresh
+    if (filters.status && filters.status !== 'active') {
       return api.get('/projects', { params: filters });
     }
-    // For list/grid views, use caching with deduplication (5 min cache)
+    // All other list/grid views (including includeParticipants requests from the
+    // public projects grid) use caching with deduplication. The cache key is
+    // derived from all params, and admin writes invalidate `projects-list:` keys.
     return cachedGetWithParams('/projects', filters, 'projects-list', 300000);
   },
   getBySlug: (slug) => cachedGet(`/projects/${slug}`, `project-${slug}`, 300000), // Cache for 5 minutes
@@ -330,6 +349,16 @@ export const projectsAPI = {
   },
   addParticipant: (slug, data) => api.post(`/projects/${slug}/participants`, data),
   removeParticipant: (slug, profileSlug) => api.delete(`/projects/${slug}/participants/${profileSlug}`),
+  publish: (slug) => {
+    apiCache.delete(`project-${slug}`);
+    apiCache.getKeys().filter(key => key.startsWith('projects-list:')).forEach(key => apiCache.delete(key));
+    return api.post(`/projects/${slug}/publish`);
+  },
+  unpublish: (slug) => {
+    apiCache.delete(`project-${slug}`);
+    apiCache.getKeys().filter(key => key.startsWith('projects-list:')).forEach(key => apiCache.delete(key));
+    return api.post(`/projects/${slug}/unpublish`);
+  },
 };
 
 // =====================================================
@@ -395,10 +424,28 @@ export const initiativesAPI = {
     });
   },
   getBySlug: (slug) => api.get(`/initiatives/${slug}`),
-  create: (data) => api.post('/initiatives', data),
-  update: (id, data) => api.put(`/initiatives/${id}`, data),
-  delete: (id) => api.delete(`/initiatives/${id}`),
+  create: (data) => {
+    invalidateInitiativeAffectedCaches();
+    return api.post('/initiatives', data);
+  },
+  update: (id, data) => {
+    // Visibility/cohort changes affect which projects appear publicly, so clear
+    // the cached project lists alongside any cached initiative responses.
+    invalidateInitiativeAffectedCaches();
+    return api.put(`/initiatives/${id}`, data);
+  },
+  delete: (id) => {
+    invalidateInitiativeAffectedCaches();
+    return api.delete(`/initiatives/${id}`);
+  },
 };
+
+// Clear cached project lists/details when an initiative changes (visibility,
+// cohort assignment, deletion) since these alter public project visibility.
+function invalidateInitiativeAffectedCaches() {
+  apiCache.getKeys().filter(k => k.startsWith('projects-list:')).forEach(k => apiCache.delete(k));
+  apiCache.getKeys().filter(k => k.startsWith('project-')).forEach(k => apiCache.delete(k));
+}
 
 // =====================================================
 // EXTERNAL CONTRIBUTOR ENDPOINTS

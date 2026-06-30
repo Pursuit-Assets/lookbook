@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 
-function ConfirmDialog({ isOpen, onClose, onConfirm, message }) {
+function ConfirmDialog({ isOpen, onClose, onConfirm, message, confirmLabel = 'Delete' }) {
   if (!isOpen) return null;
 
   return (
@@ -29,7 +29,7 @@ function ConfirmDialog({ isOpen, onClose, onConfirm, message }) {
               className="text-white"
               style={{backgroundColor: '#4242ea'}}
             >
-              Delete
+              {confirmLabel}
             </Button>
           </div>
         </CardContent>
