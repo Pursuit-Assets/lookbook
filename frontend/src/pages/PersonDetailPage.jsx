@@ -1,6 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useMemo, useCallback, memo, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { profilesAPI, projectsAPI, initiativesAPI, getImageUrl } from '../utils/api';
+import { profilesAPI, projectsAPI, initiativesAPI, getImageUrl, getProjectTileImageUrl, getVideoThumbnailUrl } from '../utils/api';
 import analytics from '../utils/analytics';
 import { useLoadingProgress } from '../contexts/LoadingProgressContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -89,7 +89,7 @@ const PageNavButton = ({ onClick, onMouseEnter, disabled, direction = 'left', ar
       onClick={onClick}
       onMouseEnter={onMouseEnter}
       disabled={disabled}
-      className={`page-nav-button ${isLeft ? 'page-nav-button-left' : ''} h-[40px] w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center`}
+      className={`page-nav-button ${isLeft ? 'page-nav-button-left' : ''} h-[44px] w-[44px] md:h-[40px] md:w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center`}
       style={{
         color: disabled ? '#d1d5db' : '#4242ea',
         backgroundColor: '#ffffff',
@@ -97,7 +97,7 @@ const PageNavButton = ({ onClick, onMouseEnter, disabled, direction = 'left', ar
       }}
       aria-label={ariaLabel}
     >
-      <Icon className="w-[30px] h-[30px]" strokeWidth={1.5} />
+      <Icon className="w-7 h-7 md:w-[30px] md:h-[30px]" strokeWidth={1.5} />
     </button>
   );
 };
@@ -410,6 +410,12 @@ const MemoizedProfileCard = memo(ProfileCard, (prevProps, nextProps) => {
 const ProjectCard = ({ proj, onClick }) => {
   const [cardRef, setCardRef] = useState(null);
   const isFeatured = proj.featured === true;
+  const fallbackThumbnail = getVideoThumbnailUrl(proj.demo_video_url);
+  const [tileImageSrc, setTileImageSrc] = useState(() => getProjectTileImageUrl(proj));
+
+  useEffect(() => {
+    setTileImageSrc(getProjectTileImageUrl(proj));
+  }, [proj.slug, proj.card_background_url, proj.main_image_url, proj.icon_url, proj.demo_video_url]);
   
   const handleMouseMove = (e) => {
     if (!cardRef) return;
@@ -516,23 +522,20 @@ const ProjectCard = ({ proj, onClick }) => {
               </>
             )}
           </div>
-        ) : (proj.card_background_url || proj.main_image_url) ? (
+        ) : tileImageSrc ? (
           <div className="absolute inset-0 z-0">
             <img 
-              src={getImageUrl((() => {
-                // Use card_background_url if available, otherwise use main_image_url
-                const imageUrl = proj.card_background_url || proj.main_image_url;
-                try {
-                  const images = JSON.parse(imageUrl);
-                  if (Array.isArray(images)) {
-                    return typeof images[0] === 'string' ? images[0] : images[0].url;
-                  }
-                } catch {}
-                return imageUrl;
-              })())}
+              src={tileImageSrc}
               alt={proj.title}
               className="w-full h-full object-cover opacity-90"
               loading="lazy"
+              onError={() => {
+                if (fallbackThumbnail && tileImageSrc !== fallbackThumbnail) {
+                  setTileImageSrc(fallbackThumbnail);
+                  return;
+                }
+                setTileImageSrc(null);
+              }}
             />
             {/* Gradient Overlay */}
             <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/60 to-black/80"></div>
@@ -2559,7 +2562,7 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
       </div>
 
       {/* Mobile: Fixed Top Right - Search, View Toggles, and Hamburger in one unit */}
-      <div className="lg:hidden fixed top-2 right-2 z-50 flex items-center gap-2">
+      <div className="lg:hidden fixed top-2 left-[5.5rem] right-2 z-50 flex items-center justify-end gap-2">
         <div 
           className="relative"
           style={{
@@ -2597,6 +2600,9 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
             }
             // If there's a committed search, don't collapse on mouse leave - keep tray open
           }}
+          onClick={() => {
+            setSearchHovered(true);
+          }}
         >
           <div 
             className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none transition-all duration-300 ease-in-out"
@@ -2614,7 +2620,7 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
           </div>
           {searchHovered && !searchFocused && (
             <span 
-              className="absolute pointer-events-none whitespace-nowrap text-base md:text-sm"
+              className="absolute pointer-events-none hidden min-[380px]:block text-base md:text-sm"
               style={{
                 top: '50%',
                 left: '50%',
@@ -2659,6 +2665,7 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
               }
             }}
             onFocus={() => {
+              setSearchHovered(true);
               setSearchFocused(true);
               // If there's a committed search, uncommit it when user clicks to search again
               if (searchCommitted) {
@@ -2717,9 +2724,9 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
             className={`search-input h-10 transition-all duration-500 ease-in-out ${
               searchHovered || searchFocused || searchCommitted
                 ? searchFocused && !searchCommitted
-                  ? 'bg-[#4242ea] w-32 pl-[10px] pr-14' 
-                  : 'bg-white w-32 pl-[10px] pr-14' 
-                : 'bg-white w-10 pl-0 pr-0'
+                  ? 'bg-[#4242ea] w-40 sm:w-44 pl-[10px] pr-16' 
+                  : 'bg-white w-40 sm:w-44 pl-[10px] pr-16' 
+                : 'bg-white w-11 pl-0 pr-0'
             }`}
             style={{
               color: searchFocused && !searchCommitted ? '#fff' : '#000'
@@ -2750,7 +2757,7 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
                   }
                 }, 0);
                 }}
-                className="absolute right-[10px] top-1/2 -translate-y-1/2 w-4 h-4 lg:w-5 lg:h-5 rounded-full border-[1.5px] flex items-center justify-center search-clear-button transition-all"
+                className="absolute right-[10px] top-1/2 -translate-y-1/2 w-6 h-6 rounded-full border-[1.5px] flex items-center justify-center search-clear-button transition-all"
                 data-committed={searchCommitted ? "true" : "false"}
                 style={{
                   borderColor: searchCommitted ? '#4242ea' : 'white',
@@ -2758,16 +2765,20 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
                 }}
                 aria-label="Clear search"
               >
-              <X className="w-3 h-3 lg:w-4 lg:h-4 search-clear-icon" strokeWidth={2} style={{ color: searchCommitted ? '#4242ea' : 'white' }} />
+              <X className="w-3.5 h-3.5 search-clear-icon" strokeWidth={2} style={{ color: searchCommitted ? '#4242ea' : 'white' }} />
               </button>
             )}
           </div>
         {/* View Toggle Icons */}
-        <div className="view-toggle-container flex items-center gap-1 bg-white rounded-md border h-10 relative" style={{padding: 0}}>
+        <div className="view-toggle-container flex items-center gap-1 bg-white rounded-md border border-gray-200 h-11 relative" style={{padding: 0}}>
           <div 
             className="view-toggle-slider"
             style={{
-              transform: layoutView === 'grid' ? 'translateX(0)' : 'translateX(calc(2.5rem + 4px))'
+              transform: layoutView === 'grid'
+                ? 'translateX(0)'
+                : layoutView === 'detail'
+                ? 'translateX(calc(2.75rem + 4px))'
+                : 'translateX(calc(5.5rem + 8px))'
             }}
           />
           <button 
@@ -2813,11 +2824,18 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
           >
             <Square className="w-3 h-3" />
           </button>
+          <button
+            className="rounded hover:bg-gray-100/50"
+            data-active={layoutView === 'list'}
+            onClick={() => setLayoutView('list')}
+          >
+            <List className="w-3 h-3" />
+          </button>
         </div>
         {/* Hamburger Menu Button */}
         <button
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          className="bg-white rounded-md border border-gray-200 h-10 w-10 flex items-center justify-center"
+          className="bg-white rounded-md border border-gray-200 h-11 w-11 flex items-center justify-center"
           aria-label="Toggle menu"
         >
           {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -3099,8 +3117,8 @@ const [projectCarouselIndex, setProjectCarouselIndex] = useState(0); // For proj
                   transform: layoutView === 'grid' 
                     ? 'translateX(0)' 
                     : layoutView === 'detail' 
-                    ? 'translateX(calc(2.5rem + 4px))' 
-                    : 'translateX(calc(5rem + 8px))'
+                    ? 'translateX(calc(2.75rem + 4px))' 
+                    : 'translateX(calc(5.5rem + 8px))'
                 }}
               />
               <button
@@ -3262,7 +3280,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                         availablePeopleFilters.skills.map(skill => (
                         <div 
                           key={skill} 
-                          className="flex items-center space-x-2"
+                          className="flex items-center space-x-2 min-h-[2.5rem] py-1"
                           onMouseDown={(e) => e.preventDefault()}
                         >
                           <Checkbox
@@ -3303,7 +3321,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                         availablePeopleFilters.industries.map(industry => (
                         <div 
                           key={industry} 
-                          className="flex items-center space-x-2"
+                          className="flex items-center space-x-2 min-h-[2.5rem] py-1"
                           onMouseDown={(e) => e.preventDefault()}
                         >
                           <Checkbox
@@ -3426,7 +3444,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                       {availableProjectFilters.skills.map(skill => (
                         <div 
                           key={skill} 
-                          className="flex items-center space-x-2"
+                          className="flex items-center space-x-2 min-h-[2.5rem] py-1"
                           onMouseDown={(e) => e.preventDefault()}
                         >
                           <Checkbox 
@@ -3463,7 +3481,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                       {availableProjectFilters.sectors.map(sector => (
                         <div 
                           key={sector} 
-                          className="flex items-center space-x-2"
+                          className="flex items-center space-x-2 min-h-[2.5rem] py-1"
                           onMouseDown={(e) => e.preventDefault()}
                         >
                           <Checkbox 
@@ -3533,7 +3551,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
 
       {/* Main Content */}
       <div className="flex-1 mt-16 lg:mt-20 mx-2 lg:ml-[260px] lg:mr-2" style={{width: '100%', maxWidth: '100%', overflowX: 'hidden'}}>
-        <div className="relative pt-0 pb-4" style={{marginLeft: 0, marginRight: 0, paddingLeft: '2rem', paddingRight: '1rem', width: '100%', maxWidth: '100%', overflowX: 'hidden'}}>
+        <div className="relative pt-0 pb-4 px-4 lg:pl-8 lg:pr-4" style={{marginLeft: 0, marginRight: 0, width: '100%', maxWidth: '100%', overflowX: 'hidden'}}>
           
           {/* Grid View */}
           {layoutView === 'grid' && viewMode === 'projects' && (
@@ -3612,7 +3630,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                   {gridListLoading ? (
                     // Show skeleton cards while loading
                     <div 
-                      className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-[18px] mb-0" 
+                      className={`grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-[18px] mb-0 ${showGridPagination ? 'pb-24 lg:pb-0' : ''}`} 
                       style={{
                         animation: 'fadeIn 0.3s ease-in-out',
                         gridAutoRows: 'auto',
@@ -3624,10 +3642,12 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                       ))}
                     </div>
                   ) : (
-                  <div 
-                    className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-[18px] mb-0" 
-                    style={{
-                      gridAutoRows: 'auto',
+                    <div
+                      key={`projects-grid-${gridPage}`}
+                      className={`grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-[18px] mb-0 ${showGridPagination ? 'pb-24 lg:pb-0' : ''}`} 
+                      style={{
+                        animation: 'fadeIn 0.3s ease-in-out',
+                        gridAutoRows: 'auto',
                       overflow: 'visible',
                       opacity: isRefreshing ? 0.5 : 1,
                       pointerEvents: isRefreshing ? 'none' : 'auto',
@@ -3662,7 +3682,10 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
 
             {/* Mobile Navigation - Bottom Fixed for Projects Grid */}
             {showGridPagination && (
-            <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white z-50 px-4 py-3 flex items-center justify-center shadow-lg">
+            <div
+              className="lg:hidden fixed bottom-0 left-0 right-0 bg-white z-50 px-4 pt-3 flex items-center justify-center shadow-lg"
+              style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.75rem)' }}
+            >
             <GridPaginationBar
                 isLoading={gridPagination.isLoading}
                 currentPage={gridPagination.currentPage}
@@ -3756,8 +3779,8 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
               ) : (
                 gridListLoading ? (
                   // Show skeleton cards while loading
-                  <div 
-                    className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-[18px] mb-0" 
+                    <div 
+                    className={`grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-[18px] mb-0 ${showGridPagination ? 'pb-24 lg:pb-0' : ''}`} 
                     style={{
                       animation: 'fadeIn 0.3s ease-in-out',
                       gridAutoRows: 'auto',
@@ -3770,8 +3793,10 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                   </div>
                 ) : (
                   <div 
-                    className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-[18px] mb-0" 
+                    key={`people-grid-${gridPage}`}
+                    className={`grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-[18px] mb-0 ${showGridPagination ? 'pb-24 lg:pb-0' : ''}`} 
                     style={{
+                      animation: 'fadeIn 0.3s ease-in-out',
                       gridAutoRows: 'auto',
                       overflow: 'visible',
                       opacity: isRefreshing ? 0.5 : 1,
@@ -3812,7 +3837,10 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
 
             {/* Mobile Navigation - Bottom Fixed for People Grid */}
             {showGridPagination && (
-            <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white z-50 px-4 py-3 flex items-center justify-center shadow-lg">
+            <div
+              className="lg:hidden fixed bottom-0 left-0 right-0 bg-white z-50 px-4 pt-3 flex items-center justify-center shadow-lg"
+              style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.75rem)' }}
+            >
             <GridPaginationBar
                 isLoading={gridPagination.isLoading}
                 currentPage={gridPagination.currentPage}
@@ -3870,7 +3898,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                         </button>
                       </div>
                     ) : (
-            <Card className="rounded-xl border-2 border-white shadow-none mb-12" style={{
+            <Card className="rounded-xl border-2 border-white shadow-none mb-12 pb-6 lg:pb-0" style={{
               backgroundColor: 'white',
               animation: 'fadeInList 0.3s ease-in-out',
               opacity: isRefreshing ? 0.5 : 1,
@@ -3889,7 +3917,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                               setLayoutView('detail');
                               navigate(withInitiativeParam(`/projects/${proj.slug}`));
                             }}
-                            className="flex items-center gap-6 p-4 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
+                            className="flex flex-col md:flex-row md:items-center gap-4 md:gap-6 p-3 md:p-4 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
                           >
                         {/* Project Icon/Image */}
                         <div className="w-20 h-20 rounded-full overflow-hidden flex-shrink-0 bg-gradient-to-br from-orange-500 to-red-500">
@@ -3917,7 +3945,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                         </div>
 
                         {/* Project Name and Description */}
-                        <div className="flex-1 min-w-0" style={{maxWidth: '550px'}}>
+                        <div className="flex-1 min-w-0 w-full md:w-auto" style={{maxWidth: '550px'}}>
                           <h3 className="font-bold text-lg uppercase" style={{fontFamily: "'Galano Grotesque', sans-serif"}}>
                             {proj.title}
                           </h3>
@@ -3947,7 +3975,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                         </div>
 
                         {/* Project Team */}
-                        <div className="w-48 flex-shrink-0 ml-14">
+                        <div className="w-full md:w-48 md:flex-shrink-0 md:ml-14">
                           <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Project Team</h4>
                           {proj.participants && proj.participants.length > 0 ? (
                             <div className="space-y-2">
@@ -4018,7 +4046,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                             setLayoutView('detail');
                             navigate(`/people/uft/${proj.slug}`);
                           }}
-                          className="flex items-center gap-6 p-4 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
+                          className="flex flex-col md:flex-row md:items-center gap-4 md:gap-6 p-3 md:p-4 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
                         >
                           <div className="w-20 h-20 rounded-full overflow-hidden flex-shrink-0 bg-gradient-to-br from-[#4242ea] to-[#2525c4]">
                             {proj.main_image_url ? (
@@ -4033,7 +4061,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                               </div>
                             )}
                           </div>
-                          <div className="flex-1 min-w-0" style={{maxWidth: '650px'}}>
+                          <div className="flex-1 min-w-0 w-full md:w-auto" style={{maxWidth: '650px'}}>
                             <h3 className="font-bold text-lg uppercase" style={{fontFamily: "'Galano Grotesque', sans-serif"}}>
                               {proj.short_description || proj.title}
                             </h3>
@@ -4060,7 +4088,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                             setLayoutView('detail');
                             navigate(`/people/${prof.slug}`);
                           }}
-                          className="flex items-start gap-6 p-4 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
+                          className="flex flex-col md:flex-row md:items-start gap-4 md:gap-6 p-3 md:p-4 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
                         >
                           {/* Profile Photo */}
                           <div className="w-20 h-20 rounded-full overflow-hidden flex-shrink-0">
@@ -4078,7 +4106,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                           </div>
 
                           {/* Name and Bio */}
-                          <div className="flex-1 min-w-0" style={{maxWidth: '550px'}}>
+                          <div className="flex-1 min-w-0 w-full md:w-auto" style={{maxWidth: '550px'}}>
                             <h3 className="font-bold text-lg uppercase" style={{fontFamily: "'Galano Grotesque', sans-serif"}}>
                               {prof.name}
                             </h3>
@@ -4113,7 +4141,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                           </div>
 
                           {/* Industries/Status */}
-                          <div className="w-48 flex-shrink-0 ml-14">
+                          <div className="w-full md:w-48 md:flex-shrink-0 md:ml-14">
                             <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Industry Expertise</h4>
                             {prof.industry_expertise && prof.industry_expertise.length > 0 ? (
                               <div className="flex flex-wrap gap-1">
@@ -4153,7 +4181,10 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
             <>
           {/* Mobile Navigation - Bottom Fixed */}
           {(
-          <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 px-4 py-3 flex items-center justify-center shadow-lg">
+          <div
+            className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 px-4 pt-3 flex items-center justify-center shadow-lg"
+            style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.75rem)' }}
+          >
             <PageNavButton
               onClick={handlePrevious}
               disabled={!canGoPrevious || currentLength <= 1}
@@ -4225,10 +4256,9 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
             </button>
           </div>
           ) : (
-          <Card className="rounded-xl border-2 border-white shadow-none mb-12 md:mb-12" style={{
+          <Card className="rounded-xl border-2 border-white shadow-none mb-12 md:mb-12 min-h-0 lg:min-h-[800px]" style={{
             backgroundColor: 'white', 
-            minHeight: '800px',
-            marginBottom: 'calc(3rem + 70px)', // Extra space for mobile nav on mobile
+            marginBottom: 'calc(4.5rem + env(safe-area-inset-bottom))',
             animation: 'fadeIn 0.3s ease-in-out',
           }}>
             <CardContent className="p-4 md:p-[30px]">
@@ -4243,7 +4273,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
               <div className="flex flex-col md:flex-row gap-6 mb-6 items-start">
                 {/* Profile Photo Card and Highlights */}
                 <div className="flex-shrink-0 w-full md:w-60">
-                  <div className="rounded-lg overflow-hidden mb-4" style={{height: '270px'}}>
+                  <div className="rounded-lg overflow-hidden mb-4 aspect-[4/5] max-h-[320px] md:aspect-auto md:h-[270px] md:max-h-none">
                     {(person.photo_url || person.photoUrl) ? (
                       <img 
                         src={getImageUrl(person.photo_url || person.photoUrl)} 
@@ -4291,7 +4321,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                     <div className="flex gap-2 items-start">
                       {person.linkedin_url && (
                         <a href={person.linkedin_url} target="_blank" rel="noopener noreferrer">
-                          <Button size="icon" style={{ backgroundColor: '#0A66C2', color: 'white' }} className="hover:opacity-90">
+                          <Button size="icon" style={{ backgroundColor: '#0A66C2', color: 'white' }} className="h-11 w-11 hover:opacity-90">
                             <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
                               <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
                             </svg>
@@ -4300,7 +4330,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                       )}
                       {person.github_url && (
                         <a href={person.github_url} target="_blank" rel="noopener noreferrer">
-                          <Button size="icon" style={{ backgroundColor: '#181717', color: 'white' }} className="hover:opacity-90">
+                          <Button size="icon" style={{ backgroundColor: '#181717', color: 'white' }} className="h-11 w-11 hover:opacity-90">
                             <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
                               <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
                             </svg>
@@ -4309,7 +4339,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                       )}
                       {person.x_url && (
                         <a href={person.x_url.startsWith('http') ? person.x_url : `https://x.com/${person.x_url.replace('@', '')}`} target="_blank" rel="noopener noreferrer">
-                          <Button size="icon" style={{ backgroundColor: '#000000', color: 'white' }} className="hover:opacity-90">
+                          <Button size="icon" style={{ backgroundColor: '#000000', color: 'white' }} className="h-11 w-11 hover:opacity-90">
                             <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
                               <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
                             </svg>
@@ -4318,7 +4348,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                       )}
                       {person.website_url && (
                         <a href={person.website_url} target="_blank" rel="noopener noreferrer">
-                          <Button variant="outline" size="icon" className="bg-white hover:bg-gray-200">
+                          <Button variant="outline" size="icon" className="h-11 w-11 bg-white hover:bg-gray-200">
                             <Globe className="h-4 w-4 text-black" />
                           </Button>
                         </a>
@@ -4344,7 +4374,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                             <button
                               onClick={() => setProjectCarouselIndex(Math.max(0, projectCarouselIndex - 3))}
                               disabled={projectCarouselIndex === 0}
-                              className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                              className="w-11 h-11 md:w-8 md:h-8 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
                             >
                               <ChevronLeft className="w-4 h-4" />
                             </button>
@@ -4354,7 +4384,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                                 setProjectCarouselIndex(Math.min(maxIndex, projectCarouselIndex + 3));
                               }}
                               disabled={projectCarouselIndex >= Math.floor((filteredPersonProjects.length - 1) / 3) * 3}
-                              className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                              className="w-11 h-11 md:w-8 md:h-8 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
                             >
                               <ChevronRight className="w-4 h-4" />
                             </button>
@@ -4609,7 +4639,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                     <div className="flex gap-2">
                       {project.github_url && (
                         <a href={project.github_url} target="_blank" rel="noopener noreferrer">
-                          <Button variant="outline" size="icon" className="bg-white hover:bg-gray-200">
+                          <Button variant="outline" size="icon" className="h-11 w-11 bg-white hover:bg-gray-200">
                             <svg className="h-4 w-4 text-black" viewBox="0 0 24 24" fill="currentColor">
                               <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
                             </svg>
@@ -4618,7 +4648,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                       )}
                       {project.live_url && (
                         <a href={project.live_url} target="_blank" rel="noopener noreferrer">
-                          <Button variant="outline" size="icon" className="bg-white hover:bg-gray-200">
+                          <Button variant="outline" size="icon" className="h-11 w-11 bg-white hover:bg-gray-200">
                             <Globe className="h-4 w-4 text-black" />
                           </Button>
                         </a>

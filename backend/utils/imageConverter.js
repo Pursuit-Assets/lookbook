@@ -2,6 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { ensureUploadsRoot, getUploadsRoot } = require('./uploadPaths');
 
 /**
  * Converts a base64 string to a file and returns the URL
@@ -29,7 +30,7 @@ function base64ToFile(base64String, directory, prefix = '') {
     // Generate unique filename
     const hash = crypto.createHash('md5').update(data).digest('hex').substring(0, 12);
     const filename = `${prefix}${hash}.${extension}`;
-    const filepath = path.join(__dirname, '..', 'public', 'uploads', directory, filename);
+    const filepath = path.join(ensureUploadsRoot(), directory, filename);
     
     // Create directory if it doesn't exist
     const dir = path.dirname(filepath);
@@ -70,7 +71,7 @@ function resolveUploadFilePath(imageUrl) {
   }
 
   const relativePath = imageUrl.replace(/^\/uploads\//, '');
-  return path.join(__dirname, '..', 'public', 'uploads', relativePath);
+  return path.join(getUploadsRoot(), relativePath);
 }
 
 /**
@@ -130,7 +131,7 @@ async function processBase64Image(base64String, directory, prefix = '', options 
 
   const data = matches[2];
   const hash = crypto.createHash('md5').update(data).digest('hex').substring(0, 12);
-  const uploadsDir = path.join(__dirname, '..', 'public', 'uploads', directory);
+  const uploadsDir = path.join(ensureUploadsRoot(), directory);
 
   if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });

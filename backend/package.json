@@ -11,7 +11,8 @@
     "db:setup": "node setup-db-connection.js",
     "db:segundo": "node setup-db-connection.js segundo",
     "db:local": "node setup-db-connection.js local",
-    "verify": "node verify-setup.js"
+    "verify": "node verify-setup.js",
+    "uploads:sync": "node scripts/sync-upload-assets-from-api.js"
   },
   "keywords": [
     "lookbook",

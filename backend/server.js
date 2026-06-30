@@ -6,6 +6,7 @@ const express = require('express');
 const cors = require('cors');
 const compression = require('compression');
 const { pool } = require('./db/dbConfig');
+const { ensureUploadsRoot } = require('./utils/uploadPaths');
 
 const app = express();
 const PORT = process.env.PORT || 4002; // Default to 4002 to match frontend
@@ -94,9 +95,11 @@ app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Serve static files from public directory (for uploaded images)
+const uploadsRoot = ensureUploadsRoot();
+
+// Serve static files from uploads directory (for uploaded images)
 // Cache images aggressively in the browser - 7 days
-app.use('/uploads', express.static('public/uploads', {
+app.use('/uploads', express.static(uploadsRoot, {
   maxAge: '7d',
   etag: true,
   lastModified: true

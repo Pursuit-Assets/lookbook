@@ -59,6 +59,77 @@ export const getImageUrl = (url) => {
   return url;
 };
 
+const pickUrlFromObject = (value) => {
+  if (!value || typeof value !== 'object') return null;
+  return (
+    value.url ||
+    value.src ||
+    value.imageUrl ||
+    value.image_url ||
+    null
+  );
+};
+
+// Supports direct URL strings and serialized image payloads.
+export const extractFirstImageUrl = (value) => {
+  if (!value) return null;
+
+  if (Array.isArray(value)) {
+    if (value.length === 0) return null;
+    const first = value[0];
+    return typeof first === 'string' ? first : pickUrlFromObject(first);
+  }
+
+  if (typeof value === 'object') {
+    return pickUrlFromObject(value);
+  }
+
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  if ((trimmed.startsWith('[') || trimmed.startsWith('{'))) {
+    try {
+      return extractFirstImageUrl(JSON.parse(trimmed));
+    } catch {
+      // Not valid JSON; fall back to plain string URL.
+    }
+  }
+
+  return trimmed;
+};
+
+export const getVideoThumbnailUrl = (videoUrl) => {
+  if (!videoUrl || typeof videoUrl !== 'string') return null;
+
+  const youtubeMatch = videoUrl.match(
+    /(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([^"&?/\s]{11})/i
+  );
+  if (youtubeMatch) {
+    return `https://img.youtube.com/vi/${youtubeMatch[1]}/hqdefault.jpg`;
+  }
+
+  const loomMatch = videoUrl.match(/loom\.com\/(?:share|embed)\/([a-z0-9]+)/i);
+  if (loomMatch) {
+    return `https://cdn.loom.com/sessions/thumbnails/${loomMatch[1]}-with-play.gif`;
+  }
+
+  return null;
+};
+
+export const getProjectTileImageUrl = (project) => {
+  if (!project) return null;
+
+  const rawImage =
+    extractFirstImageUrl(project.card_background_url) ||
+    extractFirstImageUrl(project.main_image_url) ||
+    extractFirstImageUrl(project.icon_url);
+
+  if (rawImage) return getImageUrl(rawImage);
+
+  return getVideoThumbnailUrl(project.demo_video_url);
+};
+
 // Create axios instance with defaults
 const api = axios.create({
   baseURL: API_BASE_URL,
