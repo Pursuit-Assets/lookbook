@@ -3313,7 +3313,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
 
                   <div className="space-y-2">
                     <h4 className="text-sm">Skills</h4>
-                    <div className="space-y-0.5 max-h-48 overflow-y-auto">
+                    <div className="space-y-0.5 max-h-40 overflow-y-auto">
                       {availablePeopleFilters.skills.length > 0 ? (
                         availablePeopleFilters.skills.map(skill => (
                         <div 
@@ -3354,7 +3354,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
 
                   <div className="space-y-2">
                     <h4 className="text-sm">Industries</h4>
-                    <div className="space-y-0.5 max-h-48 overflow-y-auto">
+                    <div className="space-y-0.5 max-h-40 overflow-y-auto">
                       {availablePeopleFilters.industries.length > 0 ? (
                         availablePeopleFilters.industries.map(industry => (
                         <div 
@@ -3478,7 +3478,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
 
                   <div className="space-y-2">
                     <h4 className="text-sm">Technologies</h4>
-                    <div className="space-y-0.5 max-h-48 overflow-y-auto">
+                    <div className="space-y-0.5 max-h-40 overflow-y-auto">
                       {availableProjectFilters.skills.map(skill => (
                         <div 
                           key={skill} 
@@ -3515,7 +3515,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
 
                   <div className="space-y-2">
                     <h4 className="text-sm">Industries</h4>
-                    <div className="space-y-0.5 max-h-48 overflow-y-auto">
+                    <div className="space-y-0.5 max-h-40 overflow-y-auto">
                       {availableProjectFilters.sectors.map(sector => (
                         <div 
                           key={sector} 
@@ -3550,33 +3550,34 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                 </div>
               )}
               
-              {/* Contact Button */}
-              <Separator className="bg-white" />
-              <div className="pt-2">
-                <button
-                  onClick={() => setContactModalOpen(true)}
-                  className="contact-button w-full py-3 px-4 text-white font-semibold rounded-xl shadow-lg transition-all duration-300 relative overflow-hidden group flex items-center justify-center gap-2"
-                  style={{
-                    background: 'linear-gradient(to right, #4242ea, #3535d1)',
-                  }}
-                  onMouseOver={(e) => {
-                    e.currentTarget.style.background = 'linear-gradient(to right, #3535d1, #2828b8)';
-                    e.currentTarget.style.transform = 'scale(1.02)';
-                    e.currentTarget.style.boxShadow = '0 10px 25px rgba(66, 66, 234, 0.5)';
-                  }}
-                  onMouseOut={(e) => {
-                    e.currentTarget.style.background = 'linear-gradient(to right, #4242ea, #3535d1)';
-                    e.currentTarget.style.transform = 'scale(1)';
-                    e.currentTarget.style.boxShadow = '0 4px 15px rgba(66, 66, 234, 0.3)';
-                  }}
-                >
-                  <MessageCircle className="w-5 h-5" />
-                  <span>Get in Touch</span>
-                </button>
-                <p className="mt-2 text-xs text-center text-black">
-                  For hiring, resumes & partnerships
-                </p>
-              </div>
+            </div>
+
+            {/* Contact Button - pinned footer so it's always fully visible */}
+            <div className="shrink-0 px-4 pb-4">
+              <Separator className="bg-white mb-4" />
+              <button
+                onClick={() => setContactModalOpen(true)}
+                className="contact-button w-full py-3 px-4 text-white font-semibold rounded-xl shadow-lg transition-all duration-300 relative overflow-hidden group flex items-center justify-center gap-2"
+                style={{
+                  background: 'linear-gradient(to right, #4242ea, #3535d1)',
+                }}
+                onMouseOver={(e) => {
+                  e.currentTarget.style.background = 'linear-gradient(to right, #3535d1, #2828b8)';
+                  e.currentTarget.style.transform = 'scale(1.02)';
+                  e.currentTarget.style.boxShadow = '0 10px 25px rgba(66, 66, 234, 0.5)';
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.background = 'linear-gradient(to right, #4242ea, #3535d1)';
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.boxShadow = '0 4px 15px rgba(66, 66, 234, 0.3)';
+                }}
+              >
+                <MessageCircle className="w-5 h-5" />
+                <span>Get in Touch</span>
+              </button>
+              <p className="mt-2 text-xs text-center text-black">
+                For hiring, resumes & partnerships
+              </p>
             </div>
         </div>
       </aside>
