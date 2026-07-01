@@ -4325,7 +4325,7 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
               <div className="flex flex-col md:flex-row gap-6 mb-6 items-start">
                 {/* Profile Photo Card and Highlights */}
                 <div className="flex-shrink-0 w-full md:w-60">
-                  <div className="rounded-lg overflow-hidden mb-4 aspect-[4/5] max-h-[320px] md:aspect-auto md:h-[270px] md:max-h-none">
+                  <div className="rounded-lg overflow-hidden mb-4 aspect-[4/5] md:aspect-auto md:h-[270px]">
                     {(person.photo_url || person.photoUrl) ? (
                       <img 
                         src={getImageUrl(person.photo_url || person.photoUrl)} 
@@ -4339,9 +4339,9 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                     )}
                   </div>
                   
-                  {/* Highlights */}
+                  {/* Highlights - desktop only (mobile version rendered after name/title/links) */}
                   {person.highlights && person.highlights.length > 0 && (
-                    <Card className="bg-black border-black">
+                    <Card className="bg-black border-black hidden md:block">
                       <CardContent className="p-4">
                         <h3 className="font-bold text-sm mb-3 text-white">Highlights</h3>
                         <div className="space-y-3">
@@ -4407,6 +4407,25 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                       )}
                     </div>
                   </div>
+
+                  {/* Highlights - mobile only (appears after name/title/links) */}
+                  {person.highlights && person.highlights.length > 0 && (
+                    <Card className="bg-black border-black md:hidden mb-4">
+                      <CardContent className="p-4">
+                        <h3 className="font-bold text-sm mb-3 text-white">Highlights</h3>
+                        <div className="space-y-3">
+                          {person.highlights.map((highlight, idx) => (
+                            <div key={idx} className="flex gap-3 items-start">
+                              <div className="w-6 h-6 rounded-full bg-purple-600 text-white flex items-center justify-center flex-shrink-0 text-sm font-bold">
+                                ✓
+                              </div>
+                              <p className="text-base text-white leading-snug" style={{fontSize: '14px'}}>{highlight}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
                   
                   {/* Bio & Credentials */}
                   {person.bio && (
