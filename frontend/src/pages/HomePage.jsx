@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
-import { Briefcase, ArrowRight } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import { projectsAPI, profilesAPI, getImageUrl } from '../utils/api';
 
 // Resolve a usable preview image for a project. Older projects populate
@@ -30,6 +30,14 @@ function getProjectImageUrl(project) {
   return null;
 }
 
+// Resolve a usable photo for a profile. Returns null when there's nothing to
+// show so we can keep photoless people out of the landing page preview.
+function getProfileImageUrl(profile) {
+  if (!profile) return null;
+  const raw = profile.photo_url || profile.photoUrl;
+  return raw ? getImageUrl(raw) : null;
+}
+
 function HomePage() {
   const navigate = useNavigate();
   const [projects, setProjects] = useState([]);
@@ -50,9 +58,12 @@ function HomePage() {
       try {
         const data = await projectsAPI.getAll({ limit: 12, excludeAmbassadors: true });
         if (data.success) {
-          const rows = (data.data || []).filter(
-            (p) => p.cohort !== 'UFT AI Ambassadors' && !(typeof p.summary === 'string' && p.summary.includes('"ambassador_name"'))
-          );
+          const rows = (data.data || [])
+            .filter(
+              (p) => p.cohort !== 'UFT AI Ambassadors' && !(typeof p.summary === 'string' && p.summary.includes('"ambassador_name"'))
+            )
+            // Only projects with a usable thumbnail/tile image appear in the preview.
+            .filter((p) => getProjectImageUrl(p));
           setProjects(rows);
           // Initialize with first 5 projects for display
           setVisibleProjects(rows.slice(0, 5));
@@ -99,9 +110,11 @@ function HomePage() {
       try {
         const data = await profilesAPI.getAll({ limit: 12 });
         if (data.success) {
-          setProfiles(data.data);
+          // Only people with a usable photo appear in the preview.
+          const rows = (data.data || []).filter((p) => getProfileImageUrl(p));
+          setProfiles(rows);
           // Initialize with first 5 profiles
-          setVisibleProfiles(data.data.slice(0, 5));
+          setVisibleProfiles(rows.slice(0, 5));
           // After initial load, disable the intro animation
           timeoutId = setTimeout(() => setIsInitialLoad(false), 2000);
         }
@@ -234,6 +247,19 @@ function HomePage() {
     projectsCardRef.current.style.transform = 'perspective(1000px) rotateX(0deg) rotateY(0deg) translateY(0px)';
   };
 
+  // If a thumbnail fails to load (dead/404 URL), drop that project from both the
+  // visible slots and the rotation pool so only working artwork is ever shown.
+  const handleProjectImageError = (brokenSlug) => {
+    setProjects((prev) => prev.filter((p) => p?.slug !== brokenSlug));
+    setVisibleProjects((prev) => prev.filter((p) => p?.slug !== brokenSlug));
+  };
+
+  // Same for people: a broken photo means the person is removed from the preview.
+  const handleProfileImageError = (brokenSlug) => {
+    setProfiles((prev) => prev.filter((p) => p?.slug !== brokenSlug));
+    setVisibleProfiles((prev) => prev.filter((p) => p?.slug !== brokenSlug));
+  };
+
   return (
     <div className="min-h-screen relative overflow-hidden" style={{backgroundColor: '#1a1a1a'}}>
       {/* Background Image Slideshow */}
@@ -346,7 +372,7 @@ function HomePage() {
                     className="mb-6 flex -space-x-3 relative" 
                     style={{height: '56px'}}
                   >
-                    {visibleProfiles.map((profile, i) => (
+                    {visibleProfiles.filter(Boolean).map((profile, i) => (
                       <div 
                         key={`${i}-${profile.slug}`}
                         className="w-14 h-14 flex-shrink-0 rounded-full border-4 border-white overflow-hidden bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-sm font-semibold"
@@ -361,17 +387,12 @@ function HomePage() {
                           zIndex: i
                         }}
                       >
-                        {(profile.photo_url || profile.photoUrl) ? (
-                          <img 
-                            src={getImageUrl(profile.photo_url || profile.photoUrl)}
-                            alt={`${profile.user?.first_name || ''} ${profile.user?.last_name || ''}`}
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <span>
-                            {profile.user?.first_name?.charAt(0)}{profile.user?.last_name?.charAt(0)}
-                          </span>
-                        )}
+                        <img 
+                          src={getProfileImageUrl(profile)}
+                          alt={`${profile.user?.first_name || ''} ${profile.user?.last_name || ''}`}
+                          className="w-full h-full object-cover"
+                          onError={() => handleProfileImageError(profile.slug)}
+                        />
                       </div>
                     ))}
                   </div>
@@ -469,7 +490,7 @@ function HomePage() {
                     className="mb-6 flex -space-x-3 relative" 
                     style={{height: '56px'}}
                   >
-                    {visibleProjects.map((project, i) => {
+                    {visibleProjects.filter(Boolean).map((project, i) => {
                       // Get project icon or first image (handles main_image_url and card_background_url)
                       const imageUrl = getProjectImageUrl(project);
 
@@ -488,15 +509,12 @@ function HomePage() {
                             zIndex: i
                           }}
                         >
-                          {imageUrl ? (
-                            <img
-                              src={imageUrl}
-                              alt={project.title}
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            <Briefcase className="w-8 h-8 text-white" />
-                          )}
+                          <img
+                            src={imageUrl}
+                            alt={project.title}
+                            className="w-full h-full object-cover"
+                            onError={() => handleProjectImageError(project.slug)}
+                          />
                         </div>
                       );
                     })}
