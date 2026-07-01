@@ -93,7 +93,7 @@ const PageNavButton = ({ onClick, onMouseEnter, disabled, direction = 'left', ar
       onClick={onClick}
       onMouseEnter={onMouseEnter}
       disabled={disabled}
-      className={`page-nav-button ${isLeft ? 'page-nav-button-left' : ''} h-[44px] w-[44px] md:h-[40px] md:w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center`}
+      className={`page-nav-button ${isLeft ? 'page-nav-button-left' : ''} h-[40px] w-[40px] md:h-[40px] md:w-[40px] bg-white border-0 rounded-md disabled:cursor-not-allowed flex items-center justify-center`}
       style={{
         color: disabled ? '#d1d5db' : '#4242ea',
         backgroundColor: '#ffffff',
@@ -3722,8 +3722,8 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
             {/* Mobile Navigation - Bottom Fixed for Projects Grid */}
             {showGridPagination && (
             <div
-              className="lg:hidden fixed bottom-0 left-0 right-0 bg-white z-50 px-4 pt-3 flex items-center justify-center shadow-lg"
-              style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.75rem)' }}
+              className="lg:hidden fixed bottom-0 left-0 right-0 bg-white z-50 px-4 pt-2 flex items-center justify-center shadow-lg"
+              style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.5rem)' }}
             >
             <GridPaginationBar
                 isLoading={gridPagination.isLoading}
@@ -3877,8 +3877,8 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
             {/* Mobile Navigation - Bottom Fixed for People Grid */}
             {showGridPagination && (
             <div
-              className="lg:hidden fixed bottom-0 left-0 right-0 bg-white z-50 px-4 pt-3 flex items-center justify-center shadow-lg"
-              style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.75rem)' }}
+              className="lg:hidden fixed bottom-0 left-0 right-0 bg-white z-50 px-4 pt-2 flex items-center justify-center shadow-lg"
+              style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.5rem)' }}
             >
             <GridPaginationBar
                 isLoading={gridPagination.isLoading}
@@ -4234,8 +4234,8 @@ mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
           {/* Mobile Navigation - Bottom Fixed */}
           {(
           <div
-            className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 px-4 pt-3 flex items-center justify-center shadow-lg"
-            style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.75rem)' }}
+            className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 px-4 pt-2 flex items-center justify-center shadow-lg"
+            style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.5rem)' }}
           >
             <PageNavButton
               onClick={handlePrevious}
